@@ -28,7 +28,8 @@ import {
   formatShortDate,
   sortByDateDesc,
 } from "@/lib/finance";
-import type { TransactionRecord } from "@/types/finance";
+import type { CategoryRecord, TransactionRecord } from "@/types/finance";
+import { buildCategoryBadgeStyle, resolveCategoryColor } from "@/utils/categoryColors";
 import { monthLabel } from "@/utils/format";
 
 export default function Home() {
@@ -37,9 +38,11 @@ export default function Home() {
     accounts,
     balance,
     budgets,
+    categories,
     currentMonth,
     debtList,
     expenseList,
+    incomeCategories,
     incomeList,
     recurringItems,
     scopedTransactions,
@@ -55,6 +58,14 @@ export default function Home() {
   const recentTransactions = useMemo(
     () => sortByDateDesc(scopedTransactions, "created_at").slice(0, 5),
     [scopedTransactions]
+  );
+  const expenseCategoryMetaByName = useMemo(
+    () => buildCategoryMetaByName(categories, "expense-category"),
+    [categories]
+  );
+  const incomeCategoryMetaByName = useMemo(
+    () => buildCategoryMetaByName(incomeCategories, "income-category"),
+    [incomeCategories]
   );
 
   if (loading) {
@@ -199,11 +210,44 @@ export default function Home() {
               <EmptyState title="No recurring items" body="Recurring expenses and income will show here." />
             ) : (
               <div className="space-y-2">
-                {upcomingBills.map((item) => (
+                {upcomingBills.map((item) => {
+                  const categoryLabel =
+                    item.type === "income"
+                      ? String(item.income_category_name || item.category || "Uncategorized").trim() ||
+                        "Uncategorized"
+                      : String(item.expense_category_name || item.category || "Uncategorized").trim() ||
+                        "Uncategorized";
+                  const categoryMeta =
+                    item.type === "income"
+                      ? incomeCategoryMetaByName.get(normalizeCategoryKey(categoryLabel))
+                      : item.type === "expense"
+                        ? expenseCategoryMetaByName.get(normalizeCategoryKey(categoryLabel))
+                        : null;
+                  const categoryStyle = categoryMeta
+                    ? buildCategoryBadgeStyle(categoryMeta.color)
+                    : null;
+
+                  return (
                   <div key={item.id} className="flex items-center gap-3 rounded-lg py-2.5">
-                    <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-bg-subtle">
-                      <i className="ri-repeat-line text-text-secondary" />
-                    </div>
+                    {categoryMeta && categoryStyle ? (
+                      <div
+                        className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full border"
+                        style={categoryStyle}
+                      >
+                        {categoryMeta.icon ? (
+                          <i className={`${categoryMeta.icon} text-lg`} />
+                        ) : (
+                          <span
+                            className="h-2.5 w-2.5 rounded-full"
+                            style={{ backgroundColor: "currentColor" }}
+                          />
+                        )}
+                      </div>
+                    ) : (
+                      <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-bg-subtle">
+                        <i className="ri-repeat-line text-text-secondary" />
+                      </div>
+                    )}
                     <div className="min-w-0 flex-1">
                       <p className="truncate text-sm font-medium text-text">{item.category || item.expense_category_name || item.income_category_name || "Recurring item"}</p>
                       <p className="text-2xs text-text-secondary">Due {formatShortDate(item.due_date)}</p>
@@ -215,13 +259,17 @@ export default function Home() {
                       <p className="text-2xs text-text-secondary capitalize">{item.frequency.replace(/_/g, " ")}</p>
                     </div>
                   </div>
-                ))}
+                )})}
               </div>
             )}
           </Card>
 
           <Card className="p-5 md:p-6 lg:col-span-7">
-            <RecentTransactionsSection currency={currency} recentTransactions={recentTransactions} />
+            <RecentTransactionsSection
+              categoryRecords={categories}
+              currency={currency}
+              recentTransactions={recentTransactions}
+            />
           </Card>
         </section>
       </main>
@@ -230,12 +278,19 @@ export default function Home() {
 }
 
 function RecentTransactionsSection({
+  categoryRecords,
   currency,
   recentTransactions,
 }: {
+  categoryRecords: CategoryRecord[];
   currency: string;
   recentTransactions: TransactionRecord[];
 }) {
+  const expenseCategoryMetaByName = useMemo(
+    () => buildCategoryMetaByName(categoryRecords, "expense-category"),
+    [categoryRecords]
+  );
+
   return (
     <>
       <div className="mb-5 flex items-center justify-between">
@@ -250,19 +305,42 @@ function RecentTransactionsSection({
         <EmptyState title="No transactions yet" body="Your latest income, expenses, and transfers will show here." />
       ) : (
         <div className="space-y-2">
-          {recentTransactions.map((transaction) => (
+          {recentTransactions.map((transaction) => {
+            const categoryLabel = String(transaction.category || "Uncategorized").trim() || "Uncategorized";
+            const expenseCategoryMeta = expenseCategoryMetaByName.get(normalizeCategoryKey(categoryLabel));
+            const expenseCategoryStyle = expenseCategoryMeta
+              ? buildCategoryBadgeStyle(expenseCategoryMeta.color)
+              : null;
+
+            return (
             <div key={`${transaction.source_type}-${transaction.id}`} className="flex items-center gap-3 rounded-lg py-2.5">
-              <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-bg-subtle">
-                <i
-                  className={`text-sm ${
-                    transaction.type === "income"
-                      ? "ri-arrow-down-line text-positive"
-                      : transaction.type === "transfer"
-                        ? "ri-repeat-line text-accent"
-                        : "ri-arrow-up-line text-negative"
-                  }`}
-                />
-              </div>
+              {transaction.type === "expense" && expenseCategoryMeta && expenseCategoryStyle ? (
+                <div
+                  className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full border"
+                  style={expenseCategoryStyle}
+                >
+                  {expenseCategoryMeta.icon ? (
+                    <i className={`${expenseCategoryMeta.icon} text-lg`} />
+                  ) : (
+                    <span
+                      className="h-2.5 w-2.5 rounded-full"
+                      style={{ backgroundColor: "currentColor" }}
+                    />
+                  )}
+                </div>
+              ) : (
+                <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-bg-subtle">
+                  <i
+                    className={`text-sm ${
+                      transaction.type === "income"
+                        ? "ri-arrow-down-line text-positive"
+                        : transaction.type === "transfer"
+                          ? "ri-repeat-line text-accent"
+                          : "ri-arrow-up-line text-negative"
+                    }`}
+                  />
+                </div>
+              )}
               <div className="min-w-0 flex-1">
                 <div className="flex items-center gap-2">
                   <p className="truncate text-sm font-medium text-text">
@@ -302,11 +380,35 @@ function RecentTransactionsSection({
                 </p>
               </div>
             </div>
-          ))}
+          )})}
         </div>
       )}
     </>
   );
+}
+
+function normalizeCategoryKey(value: string | null | undefined) {
+  return String(value || "").trim().toLowerCase();
+}
+
+function buildCategoryMetaByName(list: CategoryRecord[], seedPrefix: string) {
+  const map = new Map<string, { color: string; icon: string | null }>();
+
+  list.forEach((category) => {
+    const normalizedName = normalizeCategoryKey(category.name);
+    if (!normalizedName) {
+      return;
+    }
+    map.set(normalizedName, {
+      color: resolveCategoryColor(
+        category.color,
+        `${seedPrefix}:${category.id}:${category.name}`
+      ),
+      icon: category.icon || null,
+    });
+  });
+
+  return map;
 }
 
 function HomeCashFlowSection({
