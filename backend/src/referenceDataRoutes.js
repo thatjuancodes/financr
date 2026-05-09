@@ -4,6 +4,7 @@ function registerReferenceDataRoutes(app, deps) {
     get,
     run,
     normalizeCategoryColor,
+    normalizeCategoryIcon,
     pickCategoryColor,
     normalizeSuggestionRow,
     expenseSuggestionPairKey,
@@ -259,7 +260,7 @@ function registerReferenceDataRoutes(app, deps) {
   app.get("/income-categories", async (_req, res) => {
     try {
       const rows = await all(
-        "SELECT id, name, color FROM income_categories ORDER BY name ASC"
+        "SELECT id, name, color, icon FROM income_categories ORDER BY name ASC"
       );
       res.json(rows);
     } catch (err) {
@@ -268,13 +269,15 @@ function registerReferenceDataRoutes(app, deps) {
   });
 
   app.post("/income-categories", async (req, res) => {
-    const { name, color } = req.body;
+    const { name, color, icon } = req.body;
     const trimmed = typeof name === "string" ? name.trim() : "";
     const normalizedColor = normalizeCategoryColor(color);
+    const normalizedIcon = normalizeCategoryIcon(icon);
     const hasColorField = Object.prototype.hasOwnProperty.call(
       req.body ?? {},
       "color"
     );
+    const hasIconField = Object.prototype.hasOwnProperty.call(req.body ?? {}, "icon");
     if (!trimmed) {
       return res.status(400).json({ error: "Invalid income category name" });
     }
@@ -286,6 +289,9 @@ function registerReferenceDataRoutes(app, deps) {
     ) {
       return res.status(400).json({ error: "Invalid income category color" });
     }
+    if (hasIconField && normalizedIcon === null && icon !== null && icon !== "") {
+      return res.status(400).json({ error: "Invalid income category icon" });
+    }
     const categoryColor = normalizedColor || pickCategoryColor(`income:${trimmed}`);
     try {
       const duplicate = await findCategoryNameConflict("income_categories", trimmed);
@@ -295,11 +301,11 @@ function registerReferenceDataRoutes(app, deps) {
           .json({ error: "Income category name already exists" });
       }
       const result = await run(
-        "INSERT INTO income_categories (name, color) VALUES (?, ?)",
-        [trimmed, categoryColor]
+        "INSERT INTO income_categories (name, color, icon) VALUES (?, ?, ?)",
+        [trimmed, categoryColor, normalizedIcon]
       );
       const row = await get(
-        "SELECT id, name, color FROM income_categories WHERE id = ?",
+        "SELECT id, name, color, icon FROM income_categories WHERE id = ?",
         [result.lastID]
       );
       res.status(201).json(row);
@@ -312,10 +318,12 @@ function registerReferenceDataRoutes(app, deps) {
     const id = Number(req.params.id);
     const hasNameField = Object.prototype.hasOwnProperty.call(req.body ?? {}, "name");
     const hasColorField = Object.prototype.hasOwnProperty.call(req.body ?? {}, "color");
-    const { name, color } = req.body;
+    const hasIconField = Object.prototype.hasOwnProperty.call(req.body ?? {}, "icon");
+    const { name, color, icon } = req.body;
     const trimmed = typeof name === "string" ? name.trim() : "";
     const normalizedColor = normalizeCategoryColor(color);
-    if (Number.isNaN(id) || (!hasNameField && !hasColorField)) {
+    const normalizedIcon = normalizeCategoryIcon(icon);
+    if (Number.isNaN(id) || (!hasNameField && !hasColorField && !hasIconField)) {
       return res.status(400).json({ error: "Invalid income category update" });
     }
     if (hasNameField && !trimmed) {
@@ -329,9 +337,12 @@ function registerReferenceDataRoutes(app, deps) {
     ) {
       return res.status(400).json({ error: "Invalid income category color" });
     }
+    if (hasIconField && normalizedIcon === null && icon !== null && icon !== "") {
+      return res.status(400).json({ error: "Invalid income category icon" });
+    }
     try {
       const existing = await get(
-        "SELECT id, name, color FROM income_categories WHERE id = ?",
+        "SELECT id, name, color, icon FROM income_categories WHERE id = ?",
         [id]
       );
       if (!existing) {
@@ -352,15 +363,16 @@ function registerReferenceDataRoutes(app, deps) {
         ? normalizedColor || pickCategoryColor(`income:${nextName}`)
         : normalizeCategoryColor(existing.color) ||
           pickCategoryColor(`income:${nextName}`);
+      const nextIcon = hasIconField ? normalizedIcon : normalizeCategoryIcon(existing.icon);
       const result = await run(
-        "UPDATE income_categories SET name = ?, color = ? WHERE id = ?",
-        [nextName, nextColor, id]
+        "UPDATE income_categories SET name = ?, color = ?, icon = ? WHERE id = ?",
+        [nextName, nextColor, nextIcon, id]
       );
       if (result.changes === 0) {
         return res.status(404).json({ error: "Income category not found" });
       }
       const row = await get(
-        "SELECT id, name, color FROM income_categories WHERE id = ?",
+        "SELECT id, name, color, icon FROM income_categories WHERE id = ?",
         [id]
       );
       res.json(row);
@@ -391,7 +403,7 @@ function registerReferenceDataRoutes(app, deps) {
 
   app.get("/categories", async (_req, res) => {
     try {
-      const rows = await all("SELECT id, name, color FROM categories ORDER BY name ASC");
+      const rows = await all("SELECT id, name, color, icon FROM categories ORDER BY name ASC");
       res.json(rows);
     } catch (err) {
       res.status(500).json({ error: "Failed to load categories" });
@@ -399,13 +411,15 @@ function registerReferenceDataRoutes(app, deps) {
   });
 
   app.post("/categories", async (req, res) => {
-    const { name, color } = req.body;
+    const { name, color, icon } = req.body;
     const trimmed = typeof name === "string" ? name.trim() : "";
     const normalizedColor = normalizeCategoryColor(color);
+    const normalizedIcon = normalizeCategoryIcon(icon);
     const hasColorField = Object.prototype.hasOwnProperty.call(
       req.body ?? {},
       "color"
     );
+    const hasIconField = Object.prototype.hasOwnProperty.call(req.body ?? {}, "icon");
     if (!trimmed) {
       return res.status(400).json({ error: "Invalid category name" });
     }
@@ -417,6 +431,9 @@ function registerReferenceDataRoutes(app, deps) {
     ) {
       return res.status(400).json({ error: "Invalid category color" });
     }
+    if (hasIconField && normalizedIcon === null && icon !== null && icon !== "") {
+      return res.status(400).json({ error: "Invalid category icon" });
+    }
     const categoryColor = normalizedColor || pickCategoryColor(trimmed);
     try {
       const duplicate = await findCategoryNameConflict("categories", trimmed);
@@ -424,10 +441,10 @@ function registerReferenceDataRoutes(app, deps) {
         return res.status(409).json({ error: "Category name already exists" });
       }
       const result = await run(
-        "INSERT INTO categories (name, color) VALUES (?, ?)",
-        [trimmed, categoryColor]
+        "INSERT INTO categories (name, color, icon) VALUES (?, ?, ?)",
+        [trimmed, categoryColor, normalizedIcon]
       );
-      const row = await get("SELECT id, name, color FROM categories WHERE id = ?", [
+      const row = await get("SELECT id, name, color, icon FROM categories WHERE id = ?", [
         result.lastID,
       ]);
       res.status(201).json(row);
@@ -440,10 +457,12 @@ function registerReferenceDataRoutes(app, deps) {
     const id = Number(req.params.id);
     const hasNameField = Object.prototype.hasOwnProperty.call(req.body ?? {}, "name");
     const hasColorField = Object.prototype.hasOwnProperty.call(req.body ?? {}, "color");
-    const { name, color } = req.body;
+    const hasIconField = Object.prototype.hasOwnProperty.call(req.body ?? {}, "icon");
+    const { name, color, icon } = req.body;
     const trimmed = typeof name === "string" ? name.trim() : "";
     const normalizedColor = normalizeCategoryColor(color);
-    if (Number.isNaN(id) || (!hasNameField && !hasColorField)) {
+    const normalizedIcon = normalizeCategoryIcon(icon);
+    if (Number.isNaN(id) || (!hasNameField && !hasColorField && !hasIconField)) {
       return res.status(400).json({ error: "Invalid category update" });
     }
     if (hasNameField && !trimmed) {
@@ -457,9 +476,12 @@ function registerReferenceDataRoutes(app, deps) {
     ) {
       return res.status(400).json({ error: "Invalid category color" });
     }
+    if (hasIconField && normalizedIcon === null && icon !== null && icon !== "") {
+      return res.status(400).json({ error: "Invalid category icon" });
+    }
     try {
       const existing = await get(
-        "SELECT id, name, color FROM categories WHERE id = ?",
+        "SELECT id, name, color, icon FROM categories WHERE id = ?",
         [id]
       );
       if (!existing) {
@@ -473,14 +495,15 @@ function registerReferenceDataRoutes(app, deps) {
       const nextColor = hasColorField
         ? normalizedColor || pickCategoryColor(nextName)
         : normalizeCategoryColor(existing.color) || pickCategoryColor(nextName);
+      const nextIcon = hasIconField ? normalizedIcon : normalizeCategoryIcon(existing.icon);
       const result = await run(
-        "UPDATE categories SET name = ?, color = ? WHERE id = ?",
-        [nextName, nextColor, id]
+        "UPDATE categories SET name = ?, color = ?, icon = ? WHERE id = ?",
+        [nextName, nextColor, nextIcon, id]
       );
       if (result.changes === 0) {
         return res.status(404).json({ error: "Category not found" });
       }
-      const row = await get("SELECT id, name, color FROM categories WHERE id = ?", [
+      const row = await get("SELECT id, name, color, icon FROM categories WHERE id = ?", [
         id,
       ]);
       res.json(row);

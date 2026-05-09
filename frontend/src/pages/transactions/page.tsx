@@ -5,6 +5,8 @@ import Navbar from "@/components/feature/Navbar";
 import { EmptyState, LoadingState } from "@/components/feature/PageState";
 import { useFinanceData } from "@/contexts/FinanceDataContext";
 import { formatCurrency, formatLongDate, formatShortDate, monthKey, sortByDateDesc } from "@/lib/finance";
+import type { CategoryRecord } from "@/types/finance";
+import { buildCategoryBadgeStyle, resolveCategoryColor } from "@/utils/categoryColors";
 import { monthLabel } from "@/utils/format";
 
 type FilterType = "all" | "income" | "expense" | "transfer";
@@ -24,8 +26,22 @@ type TransactionListRow = {
   created_at: string;
 };
 
+type CategoryMeta = {
+  label: string;
+  color: string;
+  icon: string | null;
+};
+
 export default function Transactions() {
-  const { balance, currentMonth, expenseList, loading, scopedTransactions } = useFinanceData();
+  const {
+    balance,
+    categories,
+    currentMonth,
+    expenseList,
+    incomeCategories,
+    loading,
+    scopedTransactions,
+  } = useFinanceData();
   const [search, setSearch] = useState("");
   const [activeType, setActiveType] = useState<FilterType>("expense");
   const [expandedId, setExpandedId] = useState<string>("");
@@ -73,7 +89,15 @@ export default function Transactions() {
         .sort((left, right) => right.localeCompare(left)),
     [currentMonth, expenseRows, sortedTransactions]
   );
-  const categories = useMemo(() => {
+  const expenseCategoryMetaByName = useMemo(
+    () => buildCategoryMetaByName(categories, "expense-category"),
+    [categories]
+  );
+  const incomeCategoryMetaByName = useMemo(
+    () => buildCategoryMetaByName(incomeCategories, "income-category"),
+    [incomeCategories]
+  );
+  const categoryFilters = useMemo(() => {
     return Array.from(
       new Set(
         sourceRows.map((transaction) => String(transaction.category || "Uncategorized"))
@@ -125,6 +149,21 @@ export default function Transactions() {
         : activeType === "income"
           ? "income records"
           : "transfer records";
+  const getTransactionCategoryMeta = (transaction: TransactionListRow): CategoryMeta => {
+    const label = String(transaction.category || "Uncategorized").trim() || "Uncategorized";
+    const normalizedLabel = normalizeCategoryKey(label);
+    const categoryRecord =
+      transaction.type === "income"
+        ? incomeCategoryMetaByName.get(normalizedLabel)
+        : expenseCategoryMetaByName.get(normalizedLabel) ||
+          incomeCategoryMetaByName.get(normalizedLabel);
+
+    return {
+      label,
+      color: categoryRecord?.color || resolveCategoryColor(null, `transaction-category:${label}`),
+      icon: categoryRecord?.icon || null,
+    };
+  };
 
   if (loading) {
     return (
@@ -218,7 +257,7 @@ export default function Transactions() {
             >
               All
             </button>
-            {categories.map((category) => (
+            {categoryFilters.map((category) => (
               <button
                 key={category}
                 onClick={() => setActiveCategory(category)}
@@ -241,6 +280,8 @@ export default function Transactions() {
             {filtered.map((transaction) => {
               const rowId = `${transaction.source_type}:${transaction.id}`;
               const expanded = expandedId === rowId;
+              const categoryMeta = getTransactionCategoryMeta(transaction);
+              const categoryIconStyle = buildCategoryBadgeStyle(categoryMeta.color);
               return (
                 <Card key={rowId} className="overflow-hidden">
                   <button
@@ -248,16 +289,18 @@ export default function Transactions() {
                     onClick={() => setExpandedId(expanded ? "" : rowId)}
                     className="flex w-full items-center gap-3 p-4 text-left transition-colors hover:bg-bg-subtle"
                   >
-                    <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-bg-subtle">
-                      <i
-                        className={`text-sm ${
-                          transaction.type === "income"
-                            ? "ri-arrow-down-line text-positive"
-                            : transaction.type === "transfer"
-                              ? "ri-repeat-line text-accent"
-                              : "ri-arrow-up-line text-negative"
-                        }`}
-                      />
+                    <div
+                      className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full border"
+                      style={categoryIconStyle}
+                    >
+                      {categoryMeta.icon ? (
+                        <i className={`${categoryMeta.icon} text-lg`} />
+                      ) : (
+                        <span
+                          className="h-2.5 w-2.5 rounded-full"
+                          style={{ backgroundColor: "currentColor" }}
+                        />
+                      )}
                     </div>
                     <div className="min-w-0 flex-1">
                       <div className="flex items-center gap-2">
@@ -280,7 +323,7 @@ export default function Transactions() {
                       <div className="mt-0.5 flex items-center gap-2 text-2xs text-text-secondary">
                         <span>{formatShortDate(transaction.created_at)}</span>
                         <span>•</span>
-                        <span>{transaction.category || "Uncategorized"}</span>
+                        <span className="truncate">{categoryMeta.label}</span>
                         <span>•</span>
                         <span>{transaction.from_account_name || transaction.to_account_name || "Manual"}</span>
                       </div>
@@ -319,7 +362,24 @@ export default function Transactions() {
                         <InfoBlock label="To">
                           {transaction.to_account_name || transaction.to_entity_name || "N/A"}
                         </InfoBlock>
-                        <InfoBlock label="Category">{transaction.category || "Uncategorized"}</InfoBlock>
+                        <InfoBlock label="Category">
+                          <span className="inline-flex items-center gap-2">
+                            <span
+                              className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full border"
+                              style={categoryIconStyle}
+                            >
+                              {categoryMeta.icon ? (
+                                <i className={`${categoryMeta.icon} text-xs`} />
+                              ) : (
+                                <span
+                                  className="h-2 w-2 rounded-full"
+                                  style={{ backgroundColor: "currentColor" }}
+                                />
+                              )}
+                            </span>
+                            <span>{categoryMeta.label}</span>
+                          </span>
+                        </InfoBlock>
                         <InfoBlock label="Currency">{transaction.currency_code || currency}</InfoBlock>
                       </div>
                       {transaction.note ? (
@@ -389,4 +449,28 @@ function MetricCard({
       {hint ? <p className="mt-1 text-xs text-text-secondary">{hint}</p> : null}
     </Card>
   );
+}
+
+function normalizeCategoryKey(value: string | null | undefined) {
+  return String(value || "").trim().toLowerCase();
+}
+
+function buildCategoryMetaByName(list: CategoryRecord[], seedPrefix: string) {
+  const map = new Map<string, { color: string; icon: string | null }>();
+
+  list.forEach((category) => {
+    const normalizedName = normalizeCategoryKey(category.name);
+    if (!normalizedName) {
+      return;
+    }
+    map.set(normalizedName, {
+      color: resolveCategoryColor(
+        category.color,
+        `${seedPrefix}:${category.id}:${category.name}`
+      ),
+      icon: category.icon || null,
+    });
+  });
+
+  return map;
 }

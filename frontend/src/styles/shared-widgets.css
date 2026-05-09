@@ -113,6 +113,12 @@
   max-width: 220px;
 }
 
+.category-chip-icon {
+  font-size: 15px;
+  line-height: 1;
+  flex: 0 0 auto;
+}
+
 .category-chip-preview {
   margin-left: 8px;
 }
@@ -191,6 +197,37 @@
 .app button.category-color-swatch.selected {
   border-color: rgba(15, 23, 42, 0.46);
   box-shadow: 0 0 0 2px rgba(15, 23, 42, 0.08);
+}
+
+.category-icon-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.app button.category-icon-option {
+  min-height: 44px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  justify-content: flex-start;
+  border-radius: 10px;
+  border: 1px solid var(--color-border);
+  background: var(--color-surface);
+  color: var(--color-dark);
+  padding: 8px 10px;
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.app button.category-icon-option i {
+  font-size: 16px;
+  line-height: 1;
+}
+
+.app button.category-icon-option.selected {
+  border-color: color-mix(in srgb, var(--color-secondary) 65%, var(--color-primary));
+  background: color-mix(in srgb, var(--color-secondary) 14%, white);
 }
 
 .badge-button-group {

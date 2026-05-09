@@ -51,9 +51,11 @@ type FinanceContextValue = {
   deleteEntity: (id: string) => Promise<void>;
   createAccount: (payload: Record<string, unknown>) => Promise<void>;
   deleteAccount: (id: number) => Promise<void>;
-  createCategory: (payload: { name: string }) => Promise<void>;
+  createCategory: (payload: { name: string; color?: string | null; icon?: string | null }) => Promise<void>;
+  updateCategory: (id: number, payload: { name?: string; color?: string | null; icon?: string | null }) => Promise<void>;
   deleteCategory: (id: number) => Promise<void>;
-  createIncomeCategory: (payload: { name: string }) => Promise<void>;
+  createIncomeCategory: (payload: { name: string; color?: string | null; icon?: string | null }) => Promise<void>;
+  updateIncomeCategory: (id: number, payload: { name?: string; color?: string | null; icon?: string | null }) => Promise<void>;
   deleteIncomeCategory: (id: number) => Promise<void>;
   createBudget: (payload: Record<string, unknown>) => Promise<void>;
   deleteBudget: (id: number) => Promise<void>;
@@ -219,9 +221,13 @@ export function FinanceDataProvider({ children }: { children: React.ReactNode })
     createAccount: (payload) => runMutation(() => api.createAccount(payload), "Account created"),
     deleteAccount: (id) => runMutation(() => api.deleteAccount(id), "Account deleted"),
     createCategory: (payload) => runMutation(() => api.addCategory(payload), "Expense category created"),
+    updateCategory: (id, payload) =>
+      runMutation(() => api.updateCategory(id, payload), "Expense category updated"),
     deleteCategory: (id) => runMutation(() => api.deleteCategory(id), "Expense category deleted"),
     createIncomeCategory: (payload) =>
       runMutation(() => api.addIncomeCategory(payload), "Income category created"),
+    updateIncomeCategory: (id, payload) =>
+      runMutation(() => api.updateIncomeCategoryRecord(id, payload), "Income category updated"),
     deleteIncomeCategory: (id) =>
       runMutation(() => api.deleteIncomeCategory(id), "Income category deleted"),
     createBudget: (payload) => runMutation(() => api.addBudget(payload), "Budget created"),

@@ -1,4 +1,5 @@
 import { useMemo, useState } from "react";
+import type { Dispatch, SetStateAction } from "react";
 import { useSearchParams } from "react-router-dom";
 import Card from "@/components/base/Card";
 import Navbar from "@/components/feature/Navbar";
@@ -6,14 +7,59 @@ import { EmptyState, LoadingState } from "@/components/feature/PageState";
 import { useFinanceData } from "@/contexts/FinanceDataContext";
 import { formatCurrency } from "@/lib/finance";
 import { AutomationContent } from "@/pages/automation/page";
+import { CATEGORY_COLOR_SWATCHES, buildCategoryBadgeStyle, resolveCategoryColor } from "@/utils/categoryColors";
+import type { CategoryRecord } from "@/types/finance";
 
 type SettingsTab = "accounts" | "categories" | "budgets" | "automation" | "app";
+type CategoryDraft = {
+  name: string;
+  color: string | null;
+  icon: string | null;
+};
 
 const SETTINGS_TABS: SettingsTab[] = ["accounts", "categories", "budgets", "automation", "app"];
 
 const accountTypes = ["bank", "cash", "ewallet", "credit"];
 const entityTypes = ["personal", "family", "business"];
 const currencyOptions = ["PHP", "USD", "VND", "EUR", "GBP", "JPY", "AUD", "CAD"];
+const CATEGORY_ICON_OPTIONS = [
+  { value: null, label: "No icon", icon: "ri-shape-line" },
+  { value: "ri-home-5-line", label: "Home", icon: "ri-home-5-line" },
+  { value: "ri-shopping-bag-3-line", label: "Shopping", icon: "ri-shopping-bag-3-line" },
+  { value: "ri-store-2-line", label: "Store", icon: "ri-store-2-line" },
+  { value: "ri-restaurant-2-line", label: "Food", icon: "ri-restaurant-2-line" },
+  { value: "ri-goblet-line", label: "Dining", icon: "ri-goblet-line" },
+  { value: "ri-cup-line", label: "Coffee", icon: "ri-cup-line" },
+  { value: "ri-bank-card-line", label: "Bills", icon: "ri-bank-card-line" },
+  { value: "ri-file-list-3-line", label: "Utilities", icon: "ri-file-list-3-line" },
+  { value: "ri-car-line", label: "Car", icon: "ri-car-line" },
+  { value: "ri-gas-station-line", label: "Fuel", icon: "ri-gas-station-line" },
+  { value: "ri-bus-line", label: "Transit", icon: "ri-bus-line" },
+  { value: "ri-train-line", label: "Train", icon: "ri-train-line" },
+  { value: "ri-heart-pulse-line", label: "Health", icon: "ri-heart-pulse-line" },
+  { value: "ri-medicine-bottle-line", label: "Medical", icon: "ri-medicine-bottle-line" },
+  { value: "ri-mental-health-line", label: "Wellness", icon: "ri-mental-health-line" },
+  { value: "ri-graduation-cap-line", label: "Education", icon: "ri-graduation-cap-line" },
+  { value: "ri-book-open-line", label: "Books", icon: "ri-book-open-line" },
+  { value: "ri-movie-line", label: "Entertainment", icon: "ri-movie-line" },
+  { value: "ri-gamepad-line", label: "Games", icon: "ri-gamepad-line" },
+  { value: "ri-planet-line", label: "Subscriptions", icon: "ri-planet-line" },
+  { value: "ri-plane-line", label: "Travel", icon: "ri-plane-line" },
+  { value: "ri-hotel-bed-line", label: "Lodging", icon: "ri-hotel-bed-line" },
+  { value: "ri-luggage-cart-line", label: "Trip", icon: "ri-luggage-cart-line" },
+  { value: "ri-gift-line", label: "Gift", icon: "ri-gift-line" },
+  { value: "ri-briefcase-4-line", label: "Work", icon: "ri-briefcase-4-line" },
+  { value: "ri-money-dollar-circle-line", label: "Income", icon: "ri-money-dollar-circle-line" },
+  { value: "ri-coins-line", label: "Cash", icon: "ri-coins-line" },
+  { value: "ri-wallet-3-line", label: "Wallet", icon: "ri-wallet-3-line" },
+  { value: "ri-safe-2-line", label: "Savings", icon: "ri-safe-2-line" },
+  { value: "ri-scissors-cut-line", label: "Personal Care", icon: "ri-scissors-cut-line" },
+  { value: "ri-shirt-line", label: "Clothing", icon: "ri-shirt-line" },
+  { value: "ri-smartphone-line", label: "Phone", icon: "ri-smartphone-line" },
+  { value: "ri-computer-line", label: "Tech", icon: "ri-computer-line" },
+  { value: "ri-wifi-line", label: "Internet", icon: "ri-wifi-line" },
+  { value: "ri-flashlight-line", label: "Power", icon: "ri-flashlight-line" },
+];
 
 export default function Settings() {
   const {
@@ -36,6 +82,8 @@ export default function Settings() {
     loading,
     setCurrency,
     settings,
+    updateCategory,
+    updateIncomeCategory,
   } = useFinanceData();
   const [searchParams, setSearchParams] = useSearchParams();
   const tabParam = searchParams.get("tab");
@@ -52,6 +100,14 @@ export default function Settings() {
   const [accountCurrency, setAccountCurrency] = useState(currency);
   const [expenseCategoryName, setExpenseCategoryName] = useState("");
   const [incomeCategoryName, setIncomeCategoryName] = useState("");
+  const [activeExpenseCategoryId, setActiveExpenseCategoryId] = useState<number | null>(null);
+  const [expenseCategoryDraft, setExpenseCategoryDraft] = useState<CategoryDraft | null>(null);
+  const [expenseCategoryDrawerError, setExpenseCategoryDrawerError] = useState("");
+  const [isExpenseCategoryDrawerSubmitting, setIsExpenseCategoryDrawerSubmitting] = useState(false);
+  const [activeIncomeCategoryId, setActiveIncomeCategoryId] = useState<number | null>(null);
+  const [incomeCategoryDraft, setIncomeCategoryDraft] = useState<CategoryDraft | null>(null);
+  const [incomeCategoryDrawerError, setIncomeCategoryDrawerError] = useState("");
+  const [isIncomeCategoryDrawerSubmitting, setIsIncomeCategoryDrawerSubmitting] = useState(false);
   const [budgetForm, setBudgetForm] = useState({
     entity_id: "",
     name: "",
@@ -70,6 +126,14 @@ export default function Settings() {
       accounts: accounts.filter((account) => account.entity_id === entity.id),
     }));
   }, [accounts, entities]);
+  const activeExpenseCategory = useMemo(
+    () => categories.find((category) => category.id === activeExpenseCategoryId) || null,
+    [activeExpenseCategoryId, categories]
+  );
+  const activeIncomeCategory = useMemo(
+    () => incomeCategories.find((category) => category.id === activeIncomeCategoryId) || null,
+    [activeIncomeCategoryId, incomeCategories]
+  );
 
   async function submitBudget() {
     await createBudget({
@@ -95,6 +159,124 @@ export default function Settings() {
       payment_amount: "",
       payment_count: "",
     }));
+  }
+
+  function openExpenseCategoryDrawer(category: CategoryRecord) {
+    setActiveExpenseCategoryId(category.id);
+    setExpenseCategoryDrawerError("");
+    setExpenseCategoryDraft({
+      name: category.name,
+      color: category.color || null,
+      icon: category.icon || null,
+    });
+  }
+
+  function resetExpenseCategoryDrawer() {
+    setActiveExpenseCategoryId(null);
+    setExpenseCategoryDraft(null);
+    setExpenseCategoryDrawerError("");
+  }
+
+  function closeExpenseCategoryDrawer() {
+    if (isExpenseCategoryDrawerSubmitting) {
+      return;
+    }
+    resetExpenseCategoryDrawer();
+  }
+
+  function openIncomeCategoryDrawer(category: CategoryRecord) {
+    setActiveIncomeCategoryId(category.id);
+    setIncomeCategoryDrawerError("");
+    setIncomeCategoryDraft({
+      name: category.name,
+      color: category.color || null,
+      icon: category.icon || null,
+    });
+  }
+
+  function resetIncomeCategoryDrawer() {
+    setActiveIncomeCategoryId(null);
+    setIncomeCategoryDraft(null);
+    setIncomeCategoryDrawerError("");
+  }
+
+  function closeIncomeCategoryDrawer() {
+    if (isIncomeCategoryDrawerSubmitting) {
+      return;
+    }
+    resetIncomeCategoryDrawer();
+  }
+
+  async function submitExpenseCategoryDrawer() {
+    if (!activeExpenseCategory || !expenseCategoryDraft) {
+      return;
+    }
+    setIsExpenseCategoryDrawerSubmitting(true);
+    setExpenseCategoryDrawerError("");
+    try {
+      await updateCategory(activeExpenseCategory.id, {
+        name: expenseCategoryDraft.name,
+        color: expenseCategoryDraft.color,
+        icon: expenseCategoryDraft.icon,
+      });
+      resetExpenseCategoryDrawer();
+    } catch (error: any) {
+      setExpenseCategoryDrawerError(error?.message || "Failed to update category");
+    } finally {
+      setIsExpenseCategoryDrawerSubmitting(false);
+    }
+  }
+
+  async function submitIncomeCategoryDrawer() {
+    if (!activeIncomeCategory || !incomeCategoryDraft) {
+      return;
+    }
+    setIsIncomeCategoryDrawerSubmitting(true);
+    setIncomeCategoryDrawerError("");
+    try {
+      await updateIncomeCategory(activeIncomeCategory.id, {
+        name: incomeCategoryDraft.name,
+        color: incomeCategoryDraft.color,
+        icon: incomeCategoryDraft.icon,
+      });
+      resetIncomeCategoryDrawer();
+    } catch (error: any) {
+      setIncomeCategoryDrawerError(error?.message || "Failed to update income category");
+    } finally {
+      setIsIncomeCategoryDrawerSubmitting(false);
+    }
+  }
+
+  async function removeExpenseCategoryFromDrawer() {
+    if (!activeExpenseCategory) {
+      return;
+    }
+    setIsExpenseCategoryDrawerSubmitting(true);
+    setExpenseCategoryDrawerError("");
+    try {
+      await deleteCategory(activeExpenseCategory.id);
+      resetExpenseCategoryDrawer();
+    } catch (error: any) {
+      setExpenseCategoryDrawerError(error?.message || "Failed to delete category");
+    } finally {
+      setIsExpenseCategoryDrawerSubmitting(false);
+    }
+  }
+
+  async function removeIncomeCategoryFromDrawer() {
+    if (!activeIncomeCategory) {
+      return;
+    }
+    setIsIncomeCategoryDrawerSubmitting(true);
+    setIncomeCategoryDrawerError("");
+    try {
+      await deleteIncomeCategory(activeIncomeCategory.id);
+      resetIncomeCategoryDrawer();
+    } catch (error: any) {
+      setIncomeCategoryDrawerError(error?.message || "Failed to delete income category");
+    } finally {
+      setIsIncomeCategoryDrawerSubmitting(false);
+    }
   }
 
   if (loading) {
@@ -283,6 +465,9 @@ export default function Settings() {
           <div className="grid grid-cols-1 gap-4 xl:grid-cols-2">
             <Card className="p-5">
               <h2 className="mb-4 text-lg font-semibold text-text">Expense Categories</h2>
+              <p className="mb-4 text-sm text-text-secondary">
+                Click any category to edit its name, color, or icon.
+              </p>
               <div className="mb-4 flex gap-3">
                 <input
                   value={expenseCategoryName}
@@ -300,26 +485,26 @@ export default function Settings() {
                   Add
                 </button>
               </div>
-              <div className="space-y-2">
-                {categories.map((category) => (
-                  <div key={category.id} className="flex items-center justify-between rounded-lg bg-bg-subtle px-4 py-3">
-                    <div className="flex items-center gap-3">
-                      <div className="h-3 w-3 rounded-full" style={{ backgroundColor: category.color || "#CBD5E1" }} />
-                      <span className="text-sm text-text">{category.name}</span>
-                    </div>
-                    <button
-                      onClick={() => deleteCategory(category.id)}
-                      className="rounded-md bg-white px-3 py-1.5 text-sm font-medium text-negative-dark"
-                    >
-                      Delete
-                    </button>
-                  </div>
-                ))}
-              </div>
+              {categories.length === 0 ? (
+                <EmptyState title="No expense categories" body="Add your first expense category to get started." />
+              ) : (
+                <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
+                  {categories.map((category) => (
+                    <CategoryListRow
+                      key={category.id}
+                      category={category}
+                      onClick={() => openExpenseCategoryDrawer(category)}
+                    />
+                  ))}
+                </div>
+              )}
             </Card>
 
             <Card className="p-5">
               <h2 className="mb-4 text-lg font-semibold text-text">Income Categories</h2>
+              <p className="mb-4 text-sm text-text-secondary">
+                Click any category to edit its name, color, or icon.
+              </p>
               <div className="mb-4 flex gap-3">
                 <input
                   value={incomeCategoryName}
@@ -337,22 +522,19 @@ export default function Settings() {
                   Add
                 </button>
               </div>
-              <div className="space-y-2">
-                {incomeCategories.map((category) => (
-                  <div key={category.id} className="flex items-center justify-between rounded-lg bg-bg-subtle px-4 py-3">
-                    <div className="flex items-center gap-3">
-                      <div className="h-3 w-3 rounded-full" style={{ backgroundColor: category.color || "#CBD5E1" }} />
-                      <span className="text-sm text-text">{category.name}</span>
-                    </div>
-                    <button
-                      onClick={() => deleteIncomeCategory(category.id)}
-                      className="rounded-md bg-white px-3 py-1.5 text-sm font-medium text-negative-dark"
-                    >
-                      Delete
-                    </button>
-                  </div>
-                ))}
-              </div>
+              {incomeCategories.length === 0 ? (
+                <EmptyState title="No income categories" body="Add your first income category to get started." />
+              ) : (
+                <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
+                  {incomeCategories.map((category) => (
+                    <CategoryListRow
+                      key={category.id}
+                      category={category}
+                      onClick={() => openIncomeCategoryDrawer(category)}
+                    />
+                  ))}
+                </div>
+              )}
             </Card>
           </div>
         ) : null}
@@ -511,6 +693,32 @@ export default function Settings() {
           </div>
         ) : null}
       </main>
+
+      <SettingsCategoryDrawer
+        activeCategory={activeExpenseCategory}
+        colorSeedPrefix="expense"
+        draft={expenseCategoryDraft}
+        error={expenseCategoryDrawerError}
+        isSubmitting={isExpenseCategoryDrawerSubmitting}
+        onClose={closeExpenseCategoryDrawer}
+        onDelete={removeExpenseCategoryFromDrawer}
+        onDraftChange={setExpenseCategoryDraft}
+        onSubmit={submitExpenseCategoryDrawer}
+        title="Edit Expense Category"
+      />
+
+      <SettingsCategoryDrawer
+        activeCategory={activeIncomeCategory}
+        colorSeedPrefix="income"
+        draft={incomeCategoryDraft}
+        error={incomeCategoryDrawerError}
+        isSubmitting={isIncomeCategoryDrawerSubmitting}
+        onClose={closeIncomeCategoryDrawer}
+        onDelete={removeIncomeCategoryFromDrawer}
+        onDraftChange={setIncomeCategoryDraft}
+        onSubmit={submitIncomeCategoryDrawer}
+        title="Edit Income Category"
+      />
     </div>
   );
 }
@@ -521,5 +729,239 @@ function BudgetStat({ label, value }: { label: string; value: string }) {
       <p className="text-2xs uppercase tracking-wide text-text-secondary">{label}</p>
       <p className="mt-1 text-sm font-semibold text-text">{value}</p>
     </div>
+  );
+}
+
+function CategoryListRow({
+  category,
+  onClick,
+}: {
+  category: CategoryRecord;
+  onClick: () => void;
+}) {
+  const color = resolveCategoryColor(category.color, `category:${category.id}:${category.name}`);
+  const iconStyle = buildCategoryBadgeStyle(color);
+
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      className="flex w-full items-center gap-3 rounded-xl border border-slate-200 bg-white px-4 py-3.5 text-left text-text shadow-sm transition hover:shadow-md"
+    >
+      <span
+        className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full border"
+        style={iconStyle}
+      >
+        {category.icon ? (
+          <i className={`${category.icon} text-lg`} />
+        ) : (
+          <span className="h-3 w-3 rounded-full" style={{ backgroundColor: "currentColor" }} />
+        )}
+      </span>
+      <span className="truncate text-base font-semibold">{category.name}</span>
+    </button>
+  );
+}
+
+function SettingsCategoryDrawer({
+  activeCategory,
+  colorSeedPrefix,
+  draft,
+  error,
+  isSubmitting,
+  onClose,
+  onDelete,
+  onDraftChange,
+  onSubmit,
+  title,
+}: {
+  activeCategory: CategoryRecord | null;
+  colorSeedPrefix: string;
+  draft: CategoryDraft | null;
+  error: string;
+  isSubmitting: boolean;
+  onClose: () => void;
+  onDelete: () => void;
+  onDraftChange: Dispatch<SetStateAction<CategoryDraft | null>>;
+  onSubmit: () => Promise<void>;
+  title: string;
+}) {
+  if (!activeCategory || !draft) {
+    return null;
+  }
+
+  const previewCategory: CategoryRecord = {
+    id: activeCategory.id,
+    name: draft.name,
+    color: draft.color,
+    icon: draft.icon,
+  };
+
+  return (
+    <div
+      className="fixed inset-0 z-[80] flex justify-end bg-slate-950/30"
+      onClick={onClose}
+    >
+      <aside
+        className="h-screen w-full max-w-md overflow-y-auto border-l border-slate-200 bg-white p-5 shadow-2xl"
+        role="dialog"
+        aria-modal="true"
+        aria-label={title}
+        onClick={(event) => event.stopPropagation()}
+      >
+        <div className="mb-4 flex items-center justify-between gap-3">
+          <h2 className="text-lg font-semibold text-text">{title}</h2>
+          <button
+            type="button"
+            onClick={onClose}
+            disabled={isSubmitting}
+            className="rounded-md bg-bg-subtle px-3 py-1.5 text-sm font-medium text-text-secondary disabled:opacity-60"
+          >
+            Close
+          </button>
+        </div>
+
+        <form
+          onSubmit={async (event) => {
+            event.preventDefault();
+            await onSubmit();
+          }}
+          className="grid gap-4"
+        >
+          <label className="grid gap-1.5">
+            <span className="text-xs font-medium uppercase tracking-wide text-text-secondary">Name</span>
+            <input
+              type="text"
+              value={draft.name}
+              onChange={(event) =>
+                onDraftChange((prev) =>
+                  prev
+                    ? {
+                        ...prev,
+                        name: event.target.value,
+                      }
+                    : prev
+                )
+              }
+              required
+              className="w-full rounded-lg bg-bg-subtle px-3 py-2.5 text-sm text-text outline-none"
+            />
+          </label>
+
+          <label className="grid gap-1.5">
+            <span className="text-xs font-medium uppercase tracking-wide text-text-secondary">Color</span>
+            <div className="grid grid-cols-7 gap-2">
+              {CATEGORY_COLOR_SWATCHES.map((swatch) => {
+                const isSelected = resolveCategoryColor(draft.color, `${colorSeedPrefix}:${activeCategory.id}`) === swatch;
+                return (
+                  <button
+                    key={`${colorSeedPrefix}-${activeCategory.id}-${swatch}`}
+                    type="button"
+                    aria-label={`Use color ${swatch}`}
+                    onClick={() =>
+                      onDraftChange((prev) =>
+                        prev
+                          ? {
+                              ...prev,
+                              color: swatch,
+                            }
+                          : prev
+                      )
+                    }
+                    className={`h-9 w-9 rounded-full border-2 transition ${isSelected ? "border-text shadow-sm" : "border-transparent"}`}
+                    style={{ backgroundColor: swatch }}
+                  />
+                );
+              })}
+            </div>
+          </label>
+
+          <label className="grid gap-1.5">
+            <span className="text-xs font-medium uppercase tracking-wide text-text-secondary">Icon</span>
+            <div className="grid grid-cols-4 gap-2 sm:grid-cols-5">
+              {CATEGORY_ICON_OPTIONS.map((option) => {
+                const isSelected = (draft.icon || null) === option.value;
+                return (
+                  <button
+                    key={`${colorSeedPrefix}-${activeCategory.id}-${option.icon}`}
+                    type="button"
+                    onClick={() =>
+                      onDraftChange((prev) =>
+                        prev
+                          ? {
+                              ...prev,
+                              icon: option.value,
+                            }
+                          : prev
+                      )
+                    }
+                    className={`flex aspect-square items-center justify-center rounded-md border transition ${
+                      isSelected
+                        ? "border-accent bg-accent-light text-accent-dark"
+                        : "border-bg-subtle bg-white text-text-secondary hover:border-accent/40 hover:text-text"
+                    }`}
+                    aria-label={option.label}
+                    title={option.label}
+                  >
+                    <i className={`${option.icon} text-3xl`} />
+                  </button>
+                );
+              })}
+            </div>
+          </label>
+
+          <div className="grid gap-1.5">
+            <span className="text-xs font-medium uppercase tracking-wide text-text-secondary">Preview</span>
+            <CategoryBadgePreview
+              category={previewCategory}
+              colorKey={`${colorSeedPrefix}:${activeCategory.id}:${draft.name}`}
+            />
+          </div>
+
+          {error ? (
+            <p className="text-sm text-negative-dark">{error}</p>
+          ) : null}
+
+          <div className="mt-2 flex items-center justify-end gap-2">
+            <button
+              type="button"
+              onClick={onDelete}
+              disabled={isSubmitting}
+              className="mr-auto rounded-md bg-negative-light px-3 py-1.5 text-sm font-medium text-negative-dark disabled:opacity-60"
+            >
+              Delete
+            </button>
+            <button
+              type="submit"
+              disabled={isSubmitting}
+              className="rounded-md bg-accent px-3 py-1.5 text-sm font-medium text-white disabled:opacity-60"
+            >
+              {isSubmitting ? "Saving..." : "Save Changes"}
+            </button>
+          </div>
+        </form>
+      </aside>
+    </div>
+  );
+}
+
+function CategoryBadgePreview({
+  category,
+  colorKey,
+}: {
+  category: CategoryRecord;
+  colorKey: string;
+}) {
+  const color = resolveCategoryColor(category.color, colorKey);
+  const label = category.name.trim() || "Category";
+
+  return (
+    <span
+      className="inline-flex max-w-full items-center gap-2 rounded-full border px-3 py-1.5 text-sm font-medium"
+      style={buildCategoryBadgeStyle(color)}
+    >
+      {category.icon ? <i className={`${category.icon} text-base`} /> : null}
+      <span className="truncate">{label}</span>
+    </span>
   );
 }

@@ -1,3 +1,4 @@
+import { useEffect } from "react";
 import { BrowserRouter } from "react-router-dom";
 import { AppRoutes } from "./router";
 import { I18nextProvider } from "react-i18next";
@@ -20,13 +21,33 @@ function App() {
 function AppFrame() {
   const { error, notice, clearNotice } = useFinanceData();
 
+  useEffect(() => {
+    if (!notice) {
+      return;
+    }
+
+    const timeoutId = window.setTimeout(() => {
+      clearNotice();
+    }, 4000);
+
+    return () => {
+      window.clearTimeout(timeoutId);
+    };
+  }, [clearNotice, notice]);
+
   return (
     <>
-      <div className="fixed left-0 right-0 top-4 z-[70] mx-auto flex max-w-3xl flex-col gap-2 px-4">
+      <div className="pointer-events-none fixed bottom-4 right-4 z-[70] flex w-[calc(100%-2rem)] max-w-sm flex-col items-stretch gap-2 sm:w-full">
         {notice ? (
-          <NoticeBanner tone="success" message={notice} onClose={clearNotice} />
+          <div className="pointer-events-auto">
+            <NoticeBanner tone="success" message={notice} onClose={clearNotice} />
+          </div>
         ) : null}
-        {error ? <NoticeBanner tone="error" message={error} /> : null}
+        {error ? (
+          <div className="pointer-events-auto">
+            <NoticeBanner tone="error" message={error} />
+          </div>
+        ) : null}
       </div>
       <AppRoutes />
     </>

@@ -2,7 +2,11 @@ const express = require("express");
 const cors = require("cors");
 const crypto = require("crypto");
 const { init, run, get, all } = require("./db");
-const { normalizeCategoryColor, pickCategoryColor } = require("./categoryColors");
+const {
+  normalizeCategoryColor,
+  normalizeCategoryIcon,
+  pickCategoryColor,
+} = require("./categoryColors");
 const { generateMonthlyReport } = require("./generateMonthlyReport");
 const {
   calculateProjection,
@@ -2933,6 +2937,7 @@ registerReferenceDataRoutes(app, {
   get,
   run,
   normalizeCategoryColor,
+  normalizeCategoryIcon,
   pickCategoryColor,
   normalizeSuggestionRow,
   expenseSuggestionPairKey,

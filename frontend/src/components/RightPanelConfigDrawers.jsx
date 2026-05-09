@@ -27,6 +27,49 @@ function CategoryColorPicker({ selectedColor, onSelect, prefix }) {
   );
 }
 
+const CATEGORY_ICON_OPTIONS = [
+  { value: "", label: "No icon", icon: "ri-shape-line" },
+  { value: "ri-home-5-line", label: "Home", icon: "ri-home-5-line" },
+  { value: "ri-shopping-bag-3-line", label: "Shopping", icon: "ri-shopping-bag-3-line" },
+  { value: "ri-restaurant-2-line", label: "Food", icon: "ri-restaurant-2-line" },
+  { value: "ri-goblet-line", label: "Dining", icon: "ri-goblet-line" },
+  { value: "ri-bank-card-line", label: "Bills", icon: "ri-bank-card-line" },
+  { value: "ri-car-line", label: "Car", icon: "ri-car-line" },
+  { value: "ri-bus-line", label: "Transit", icon: "ri-bus-line" },
+  { value: "ri-heart-pulse-line", label: "Health", icon: "ri-heart-pulse-line" },
+  { value: "ri-medicine-bottle-line", label: "Medical", icon: "ri-medicine-bottle-line" },
+  { value: "ri-graduation-cap-line", label: "Education", icon: "ri-graduation-cap-line" },
+  { value: "ri-movie-line", label: "Entertainment", icon: "ri-movie-line" },
+  { value: "ri-plane-line", label: "Travel", icon: "ri-plane-line" },
+  { value: "ri-gift-line", label: "Gift", icon: "ri-gift-line" },
+  { value: "ri-briefcase-4-line", label: "Work", icon: "ri-briefcase-4-line" },
+  { value: "ri-money-dollar-circle-line", label: "Income", icon: "ri-money-dollar-circle-line" },
+  { value: "ri-wallet-3-line", label: "Wallet", icon: "ri-wallet-3-line" },
+  { value: "ri-safe-2-line", label: "Savings", icon: "ri-safe-2-line" },
+];
+
+function CategoryIconPicker({ selectedIcon, onSelect, prefix }) {
+  return (
+    <div className="category-icon-grid">
+      {CATEGORY_ICON_OPTIONS.map((option) => {
+        const isSelected = selectedIcon === option.value;
+        return (
+          <button
+            key={`${prefix}-${option.icon}`}
+            type="button"
+            className={`category-icon-option${isSelected ? " selected" : ""}`}
+            onClick={() => onSelect(option.value)}
+            aria-label={`Use icon ${option.label}`}
+          >
+            <i className={option.icon} aria-hidden="true" />
+            <span>{option.label}</span>
+          </button>
+        );
+      })}
+    </div>
+  );
+}
+
 function DrawerShell({
   open,
   onClose,
@@ -303,7 +346,7 @@ export function InstitutionDrawers(props) {
   );
 }
 
-function CategoryPreview({ name, color, fallbackLabel, colorKey }) {
+function CategoryPreview({ name, color, icon, fallbackLabel, colorKey }) {
   return (
     <p className="subtle-text subtle-text-flush">
       Preview:
@@ -311,6 +354,7 @@ function CategoryPreview({ name, color, fallbackLabel, colorKey }) {
         className="category-chip category-chip-preview"
         style={buildCategoryBadgeStyle(resolveCategoryColor(color, colorKey))}
       >
+        {icon ? <i className={`${icon} category-chip-icon`} aria-hidden="true" /> : null}
         <span className="category-chip-label">{name.trim() || fallbackLabel}</span>
       </span>
     </p>
@@ -549,9 +593,20 @@ export function ExpenseCategoryDrawers(props) {
                 prefix="expense-category-swatch"
               />
             </label>
+            <label className="stack-fields">
+              <span className="subtle-text subtle-text-flush">Icon</span>
+              <CategoryIconPicker
+                selectedIcon={activeCategoryDraft?.icon ?? ""}
+                onSelect={(icon) =>
+                  updateCategoryDraft(activeCategoryItem.id, "icon", icon)
+                }
+                prefix="expense-category-icon"
+              />
+            </label>
             <CategoryPreview
               name={activeCategoryDraft?.name || activeCategoryItem.name}
               color={activeCategoryDraft?.color}
+              icon={activeCategoryDraft?.icon || activeCategoryItem.icon}
               fallbackLabel="Expense Category"
               colorKey={`${activeCategoryItem.id}:${activeCategoryDraft?.name ?? activeCategoryItem.name}`}
             />
@@ -601,23 +656,37 @@ export function ExpenseCategoryDrawers(props) {
           </label>
           <label className="stack-fields">
             <span className="subtle-text subtle-text-flush">Color</span>
-            <CategoryColorPicker
-              selectedColor={resolveCategoryColor(
-                addCategoryDraft.color,
-                `new-expense:${addCategoryDraft.name}`
-              )}
+              <CategoryColorPicker
+                selectedColor={resolveCategoryColor(
+                  addCategoryDraft.color,
+                  `new-expense:${addCategoryDraft.name}`
+                )}
               onSelect={(swatch) =>
                 setAddCategoryDraft((prev) => ({
                   ...prev,
                   color: swatch,
                 }))
               }
-              prefix="new-category-swatch"
+                prefix="new-category-swatch"
+              />
+            </label>
+          <label className="stack-fields">
+            <span className="subtle-text subtle-text-flush">Icon</span>
+            <CategoryIconPicker
+              selectedIcon={addCategoryDraft.icon ?? ""}
+              onSelect={(icon) =>
+                setAddCategoryDraft((prev) => ({
+                  ...prev,
+                  icon,
+                }))
+              }
+              prefix="new-category-icon"
             />
           </label>
           <CategoryPreview
             name={addCategoryDraft.name}
             color={addCategoryDraft.color}
+            icon={addCategoryDraft.icon}
             fallbackLabel="Expense Category"
             colorKey={`new-expense:${addCategoryDraft.name}`}
           />
@@ -695,9 +764,20 @@ export function IncomeCategoryDrawers(props) {
                 prefix="income-category-swatch"
               />
             </label>
+            <label className="stack-fields">
+              <span className="subtle-text subtle-text-flush">Icon</span>
+              <CategoryIconPicker
+                selectedIcon={activeIncomeCategoryDraft?.icon ?? ""}
+                onSelect={(icon) =>
+                  updateIncomeCategoryDraft(activeIncomeCategoryItem.id, "icon", icon)
+                }
+                prefix="income-category-icon"
+              />
+            </label>
             <CategoryPreview
               name={activeIncomeCategoryDraft?.name || activeIncomeCategoryItem.name}
               color={activeIncomeCategoryDraft?.color}
+              icon={activeIncomeCategoryDraft?.icon || activeIncomeCategoryItem.icon}
               fallbackLabel="Income Category"
               colorKey={`income:${activeIncomeCategoryItem.id}:${activeIncomeCategoryDraft?.name ?? activeIncomeCategoryItem.name}`}
             />
@@ -749,23 +829,37 @@ export function IncomeCategoryDrawers(props) {
           </label>
           <label className="stack-fields">
             <span className="subtle-text subtle-text-flush">Color</span>
-            <CategoryColorPicker
-              selectedColor={resolveCategoryColor(
-                addIncomeCategoryDraft.color,
-                `new-income:${addIncomeCategoryDraft.name}`
-              )}
+              <CategoryColorPicker
+                selectedColor={resolveCategoryColor(
+                  addIncomeCategoryDraft.color,
+                  `new-income:${addIncomeCategoryDraft.name}`
+                )}
               onSelect={(swatch) =>
                 setAddIncomeCategoryDraft((prev) => ({
                   ...prev,
                   color: swatch,
                 }))
               }
-              prefix="new-income-category-swatch"
+                prefix="new-income-category-swatch"
+              />
+            </label>
+          <label className="stack-fields">
+            <span className="subtle-text subtle-text-flush">Icon</span>
+            <CategoryIconPicker
+              selectedIcon={addIncomeCategoryDraft.icon ?? ""}
+              onSelect={(icon) =>
+                setAddIncomeCategoryDraft((prev) => ({
+                  ...prev,
+                  icon,
+                }))
+              }
+              prefix="new-income-category-icon"
             />
           </label>
           <CategoryPreview
             name={addIncomeCategoryDraft.name}
             color={addIncomeCategoryDraft.color}
+            icon={addIncomeCategoryDraft.icon}
             fallbackLabel="Income Category"
             colorKey={`new-income:${addIncomeCategoryDraft.name}`}
           />

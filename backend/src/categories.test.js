@@ -98,16 +98,19 @@ test("expense categories reject duplicate names on create and update", async () 
     body: {
       name: "Household",
       color: "#FECDD3",
+      icon: "ri-home-5-line",
     },
   });
   assert.equal(response.status, 201, JSON.stringify(response.data));
   const firstCategory = response.data;
+  assert.equal(firstCategory.icon, "ri-home-5-line");
 
   response = await request("/categories", {
     method: "POST",
     body: {
       name: " household ",
       color: "#FDA4AF",
+      icon: "ri-home-6-line",
     },
   });
   assert.equal(response.status, 409, JSON.stringify(response.data));
@@ -118,6 +121,7 @@ test("expense categories reject duplicate names on create and update", async () 
     body: {
       name: "Utilities",
       color: "#FB7185",
+      icon: "ri-flashlight-line",
     },
   });
   assert.equal(response.status, 201, JSON.stringify(response.data));
@@ -128,6 +132,7 @@ test("expense categories reject duplicate names on create and update", async () 
     body: {
       name: "HOUSEHOLD",
       color: "#F43F5E",
+      icon: "ri-bank-card-line",
     },
   });
   assert.equal(response.status, 409, JSON.stringify(response.data));
@@ -138,10 +143,21 @@ test("expense categories reject duplicate names on create and update", async () 
     body: {
       name: "household",
       color: "#FED7AA",
+      icon: "ri-shopping-bag-3-line",
     },
   });
   assert.equal(response.status, 200, JSON.stringify(response.data));
   assert.equal(response.data.name, "household");
+  assert.equal(response.data.icon, "ri-shopping-bag-3-line");
+
+  response = await request(`/categories/${firstCategory.id}`, {
+    method: "PUT",
+    body: {
+      icon: "bad-icon",
+    },
+  });
+  assert.equal(response.status, 400, JSON.stringify(response.data));
+  assert.equal(response.data.error, "Invalid category icon");
 });
 
 test("income categories reject duplicate names on create and update", async () => {
@@ -150,16 +166,19 @@ test("income categories reject duplicate names on create and update", async () =
     body: {
       name: "Salary",
       color: "#FECDD3",
+      icon: "ri-wallet-3-line",
     },
   });
   assert.equal(response.status, 201, JSON.stringify(response.data));
   const firstCategory = response.data;
+  assert.equal(firstCategory.icon, "ri-wallet-3-line");
 
   response = await request("/income-categories", {
     method: "POST",
     body: {
       name: " salary ",
       color: "#FDA4AF",
+      icon: "ri-safe-2-line",
     },
   });
   assert.equal(response.status, 409, JSON.stringify(response.data));
@@ -170,6 +189,7 @@ test("income categories reject duplicate names on create and update", async () =
     body: {
       name: "Bonus",
       color: "#FB7185",
+      icon: "ri-gift-line",
     },
   });
   assert.equal(response.status, 201, JSON.stringify(response.data));
@@ -180,6 +200,7 @@ test("income categories reject duplicate names on create and update", async () =
     body: {
       name: "SALARY",
       color: "#F43F5E",
+      icon: "ri-briefcase-4-line",
     },
   });
   assert.equal(response.status, 409, JSON.stringify(response.data));
@@ -190,8 +211,19 @@ test("income categories reject duplicate names on create and update", async () =
     body: {
       name: "salary",
       color: "#FED7AA",
+      icon: "ri-money-dollar-circle-line",
     },
   });
   assert.equal(response.status, 200, JSON.stringify(response.data));
   assert.equal(response.data.name, "salary");
+  assert.equal(response.data.icon, "ri-money-dollar-circle-line");
+
+  response = await request(`/income-categories/${firstCategory.id}`, {
+    method: "PUT",
+    body: {
+      icon: "not-an-icon",
+    },
+  });
+  assert.equal(response.status, 400, JSON.stringify(response.data));
+  assert.equal(response.data.error, "Invalid income category icon");
 });

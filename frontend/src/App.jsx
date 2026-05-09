@@ -1771,6 +1771,9 @@ export default function App() {
       if (typeof payload?.color === "string" && payload.color.trim()) {
         nextPayload.color = payload.color.trim();
       }
+      if (typeof payload?.icon === "string") {
+        nextPayload.icon = payload.icon.trim();
+      }
       await api.addCategory(nextPayload);
       await refreshAll();
     } catch (err) {
@@ -1791,6 +1794,9 @@ export default function App() {
                 : {}),
               ...(typeof payload?.color === "string"
                 ? { color: payload.color.trim() }
+                : {}),
+              ...(typeof payload?.icon === "string"
+                ? { icon: payload.icon.trim() }
                 : {}),
             };
       await api.updateCategory(id, nextPayload);
@@ -1833,6 +1839,9 @@ export default function App() {
       if (typeof payload?.color === "string" && payload.color.trim()) {
         nextPayload.color = payload.color.trim();
       }
+      if (typeof payload?.icon === "string") {
+        nextPayload.icon = payload.icon.trim();
+      }
       await api.addIncomeCategory(nextPayload);
       await refreshAll();
     } catch (err) {
@@ -1853,6 +1862,9 @@ export default function App() {
                 : {}),
               ...(typeof payload?.color === "string"
                 ? { color: payload.color.trim() }
+                : {}),
+              ...(typeof payload?.icon === "string"
+                ? { icon: payload.icon.trim() }
                 : {}),
             };
       await api.updateIncomeCategoryRecord(id, nextPayload);

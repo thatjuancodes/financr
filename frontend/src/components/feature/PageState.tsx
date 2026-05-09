@@ -43,10 +43,10 @@ export function NoticeBanner({
 
   return (
     <div className={`rounded-xl border px-4 py-3 text-sm ${tones[tone]}`}>
-      <div className="flex items-start justify-between gap-3">
+      <div className="flex items-center justify-between gap-3">
         <span>{message}</span>
         {onClose ? (
-          <button onClick={onClose} className="text-current/70 transition hover:text-current">
+          <button onClick={onClose} className="shrink-0 text-current/70 transition hover:text-current">
             <i className="ri-close-line text-lg" />
           </button>
         ) : null}

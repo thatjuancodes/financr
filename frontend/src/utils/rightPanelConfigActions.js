@@ -57,6 +57,7 @@ export function createRightPanelConfigActions({
     setAddCategoryDraft({
       name: "",
       color: defaultCategoryColor,
+      icon: "",
     });
   };
 
@@ -64,6 +65,7 @@ export function createRightPanelConfigActions({
     setAddIncomeCategoryDraft({
       name: "",
       color: defaultCategoryColor,
+      icon: "",
     });
   };
 
@@ -119,11 +121,16 @@ export function createRightPanelConfigActions({
       activeCategoryDraft?.color,
       `${activeCategoryItem.id}:${name}`
     );
+    const icon =
+      typeof activeCategoryDraft?.icon === "string" &&
+      activeCategoryDraft.icon.trim()
+        ? activeCategoryDraft.icon.trim()
+        : null;
 
     setCategoryDrawerError("");
     setIsCategoryDrawerSubmitting(true);
     try {
-      await onCategoryUpdate(activeCategoryItem.id, { name, color });
+      await onCategoryUpdate(activeCategoryItem.id, { name, color, icon });
     } catch (err) {
       setCategoryDrawerError(err.message || "Failed to update category.");
     } finally {
@@ -160,10 +167,14 @@ export function createRightPanelConfigActions({
       return;
     }
     const color = resolveCategoryColor(addCategoryDraft?.color, `new-expense:${name}`);
+    const icon =
+      typeof addCategoryDraft?.icon === "string" && addCategoryDraft.icon.trim()
+        ? addCategoryDraft.icon.trim()
+        : null;
     setAddCategoryDrawerError("");
     setIsAddCategoryDrawerSubmitting(true);
     try {
-      await onCategoryCreate({ name, color });
+      await onCategoryCreate({ name, color, icon });
       setIsAddCategoryDrawerOpen(false);
       resetCategoryDraft();
     } catch (err) {
@@ -216,11 +227,20 @@ export function createRightPanelConfigActions({
       activeIncomeCategoryDraft?.color,
       `income:${activeIncomeCategoryItem.id}:${name}`
     );
+    const icon =
+      typeof activeIncomeCategoryDraft?.icon === "string" &&
+      activeIncomeCategoryDraft.icon.trim()
+        ? activeIncomeCategoryDraft.icon.trim()
+        : null;
 
     setIncomeCategoryDrawerError("");
     setIsIncomeCategoryDrawerSubmitting(true);
     try {
-      await onIncomeCategoryRecordUpdate(activeIncomeCategoryItem.id, { name, color });
+      await onIncomeCategoryRecordUpdate(activeIncomeCategoryItem.id, {
+        name,
+        color,
+        icon,
+      });
     } catch (err) {
       setIncomeCategoryDrawerError(
         err.message || "Failed to update income category."
@@ -264,10 +284,15 @@ export function createRightPanelConfigActions({
       addIncomeCategoryDraft?.color,
       `new-income:${name}`
     );
+    const icon =
+      typeof addIncomeCategoryDraft?.icon === "string" &&
+      addIncomeCategoryDraft.icon.trim()
+        ? addIncomeCategoryDraft.icon.trim()
+        : null;
     setAddIncomeCategoryDrawerError("");
     setIsAddIncomeCategoryDrawerSubmitting(true);
     try {
-      await onIncomeCategoryCreate({ name, color });
+      await onIncomeCategoryCreate({ name, color, icon });
       setIsAddIncomeCategoryDrawerOpen(false);
       resetIncomeCategoryDraft();
     } catch (err) {

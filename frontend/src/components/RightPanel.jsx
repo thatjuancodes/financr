@@ -209,10 +209,12 @@ export default function RightPanel({
   const [addCategoryDraft, setAddCategoryDraft] = React.useState({
     name: "",
     color: CATEGORY_COLOR_SWATCHES[0] ?? "",
+    icon: "",
   });
   const [addIncomeCategoryDraft, setAddIncomeCategoryDraft] = React.useState({
     name: "",
     color: CATEGORY_COLOR_SWATCHES[0] ?? "",
+    icon: "",
   });
   const [addSuggestionDraft, setAddSuggestionDraft] = React.useState({
     category: "",
@@ -610,6 +612,7 @@ export default function RightPanel({
     (item) => ({
       name: item.name ?? "",
       color: resolveCategoryColor(item.color, `${item.id}:${item.name ?? ""}`),
+      icon: item.icon ?? "",
     }),
     []
   );
@@ -668,6 +671,7 @@ export default function RightPanel({
     (item) => ({
       name: item.name ?? "",
       color: resolveCategoryColor(item.color, `income:${item.id}:${item.name ?? ""}`),
+      icon: item.icon ?? "",
     }),
     []
   );

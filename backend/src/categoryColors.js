@@ -30,6 +30,7 @@ const CATEGORY_COLOR_SWATCHES = [
 ];
 
 const HEX_COLOR = /^#[0-9a-fA-F]{6}$/;
+const CATEGORY_ICON = /^ri-[a-z0-9-]+$/;
 
 function normalizeCategoryColor(value) {
   if (value === null || value === undefined) {
@@ -43,6 +44,20 @@ function normalizeCategoryColor(value) {
     return null;
   }
   return trimmed.toUpperCase();
+}
+
+function normalizeCategoryIcon(value) {
+  if (value === null || value === undefined) {
+    return null;
+  }
+  const trimmed = String(value).trim();
+  if (!trimmed) {
+    return null;
+  }
+  if (!CATEGORY_ICON.test(trimmed)) {
+    return null;
+  }
+  return trimmed;
 }
 
 function hashSeed(seed) {
@@ -65,5 +80,6 @@ function pickCategoryColor(seed) {
 module.exports = {
   CATEGORY_COLOR_SWATCHES,
   normalizeCategoryColor,
+  normalizeCategoryIcon,
   pickCategoryColor,
 };

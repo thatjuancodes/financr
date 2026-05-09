@@ -6,6 +6,7 @@ const { resolveEntityDefaultAccountId } = require("./accountPreferences");
 const {
   CATEGORY_COLOR_SWATCHES,
   normalizeCategoryColor,
+  normalizeCategoryIcon,
   pickCategoryColor,
 } = require("./categoryColors");
 
@@ -242,13 +243,15 @@ async function init() {
     CREATE TABLE IF NOT EXISTS categories (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
       name TEXT UNIQUE NOT NULL,
-      color TEXT
+      color TEXT,
+      icon TEXT
     );
 
     CREATE TABLE IF NOT EXISTS income_categories (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
       name TEXT UNIQUE NOT NULL,
-      color TEXT
+      color TEXT,
+      icon TEXT
     );
 
     CREATE TABLE IF NOT EXISTS debts (
@@ -1358,10 +1361,15 @@ async function init() {
   if (!hasCategoryColor) {
     db.run("ALTER TABLE categories ADD COLUMN color TEXT");
   }
+  const hasCategoryIcon = categoryColumns.some((col) => col.name === "icon");
+  if (!hasCategoryIcon) {
+    db.run("ALTER TABLE categories ADD COLUMN icon TEXT");
+  }
 
-  const categoryRows = all("SELECT id, name, color FROM categories");
+  const categoryRows = all("SELECT id, name, color, icon FROM categories");
   categoryRows.forEach((row) => {
     const normalizedColor = normalizeCategoryColor(row.color);
+    const normalizedIcon = normalizeCategoryIcon(row.icon);
     const fallbackColor = pickCategoryColor(`${row.id}:${row.name}`);
     const nextColor =
       LEGACY_TO_CURRENT_SWATCH.get(normalizedColor) ||
@@ -1369,6 +1377,9 @@ async function init() {
       fallbackColor;
     if (nextColor !== row.color) {
       db.run("UPDATE categories SET color = ? WHERE id = ?", [nextColor, row.id]);
+    }
+    if (normalizedIcon !== row.icon) {
+      db.run("UPDATE categories SET icon = ? WHERE id = ?", [normalizedIcon, row.id]);
     }
   });
 
@@ -1379,10 +1390,17 @@ async function init() {
   if (!hasIncomeCategoryColor) {
     db.run("ALTER TABLE income_categories ADD COLUMN color TEXT");
   }
+  const hasIncomeCategoryIcon = incomeCategoryColumns.some(
+    (col) => col.name === "icon"
+  );
+  if (!hasIncomeCategoryIcon) {
+    db.run("ALTER TABLE income_categories ADD COLUMN icon TEXT");
+  }
 
-  const incomeCategoryRows = all("SELECT id, name, color FROM income_categories");
+  const incomeCategoryRows = all("SELECT id, name, color, icon FROM income_categories");
   incomeCategoryRows.forEach((row) => {
     const normalizedColor = normalizeCategoryColor(row.color);
+    const normalizedIcon = normalizeCategoryIcon(row.icon);
     const fallbackColor = pickCategoryColor(`income:${row.id}:${row.name}`);
     const nextColor =
       LEGACY_TO_CURRENT_SWATCH.get(normalizedColor) ||
@@ -1391,6 +1409,12 @@ async function init() {
     if (nextColor !== row.color) {
       db.run("UPDATE income_categories SET color = ? WHERE id = ?", [
         nextColor,
+        row.id,
+      ]);
+    }
+    if (normalizedIcon !== row.icon) {
+      db.run("UPDATE income_categories SET icon = ? WHERE id = ?", [
+        normalizedIcon,
         row.id,
       ]);
     }

@@ -1,7 +1,7 @@
 import React from "react";
 import RowActionsMenu from "./RowActionsMenu";
 import Button from "./ui/Button";
-import { resolveCategoryColor } from "../utils/categoryColors";
+import { buildCategoryBadgeStyle, resolveCategoryColor } from "../utils/categoryColors";
 
 export function GeneralSection({
   currency,
@@ -132,17 +132,11 @@ function CategoryChipSection({
             onClick={() => openDrawer(item.id)}
             onKeyDown={(event) => handleKeyDown(event, item.id)}
             aria-label={`Edit ${title.toLowerCase()} ${item.name}`}
+            style={buildCategoryBadgeStyle(
+              resolveCategoryColor(item.color, `${colorKeyPrefix}:${item.id}:${item.name}`)
+            )}
           >
-            <span
-              className="category-chip-swatch"
-              style={{
-                backgroundColor: resolveCategoryColor(
-                  item.color,
-                  `${colorKeyPrefix}:${item.id}:${item.name}`
-                ),
-              }}
-              aria-hidden="true"
-            />
+            {item.icon ? <i className={`${item.icon} category-chip-icon`} aria-hidden="true" /> : null}
             <span className="category-chip-label">{item.name}</span>
           </button>
         ))}
