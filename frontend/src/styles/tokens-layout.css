@@ -1,0 +1,389 @@
+/* Tokens, app shell, buttons, tabs, config layout chrome */
+:root {
+  --color-primary: #0f766e;
+  --color-secondary: #38bdf8;
+  --color-success: #84cc16;
+  --color-error: #e11d48;
+  --color-danger: #f97316;
+  --color-dark: #111827;
+  --color-light: #f8f5ef;
+  --color-surface: #ffffff;
+  --color-surface-muted: #f8fafc;
+  --color-border: #dbe3ee;
+  --color-text-muted: #566076;
+  --shadow-soft: 0 14px 40px rgba(15, 23, 42, 0.1);
+  --shadow-flyout: 0 18px 42px rgba(15, 23, 42, 0.2);
+  --radius-xs: 8px;
+  --radius-sm: 12px;
+  --radius-md: 16px;
+  --radius-lg: 20px;
+}
+
+html {
+  font-size: 18px;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  color: var(--color-dark);
+  font-family: "Manrope", "Avenir Next", "Segoe UI", sans-serif;
+  font-size: 1rem;
+  line-height: 1.5;
+  background: linear-gradient(180deg, var(--color-light) 0%, #ffffff 32%, #eef8ff 100%);
+}
+
+.app {
+  padding: 16px;
+  max-width: 1240px;
+  margin: 0 auto;
+}
+
+.app section {
+  margin-bottom: 24px;
+  background: color-mix(in srgb, var(--color-surface) 92%, transparent);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-lg);
+  padding: 16px;
+  box-shadow: var(--shadow-soft);
+  backdrop-filter: blur(4px);
+}
+
+.app h2 {
+  margin: 0 0 12px;
+  font-family: "Sora", "Avenir Next", "Segoe UI", sans-serif;
+  font-size: 1.35rem;
+  line-height: 1.25;
+  letter-spacing: -0.01em;
+}
+
+.app .no-top {
+  margin-top: 0;
+}
+.app button,
+.app-btn {
+  border: 0;
+  border-radius: 12px;
+  background: var(--color-primary);
+  color: #fff;
+  font-weight: 700;
+  font-size: 16px;
+  padding: 9px 14px;
+  min-height: 38px;
+  cursor: pointer;
+  line-height: 1.1;
+  transition: transform 0.15s ease, filter 0.15s ease, opacity 0.2s ease;
+}
+
+.app button:hover,
+.app-btn:hover {
+  filter: brightness(0.98);
+}
+
+.app button:active,
+.app-btn:active {
+  transform: translateY(1px);
+}
+
+.app button:disabled,
+.app-btn:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+
+.app-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  text-decoration: none;
+}
+
+.app-btn-sm {
+  min-height: 32px;
+  padding: 6px 11px;
+  font-size: 14px;
+}
+
+.app-btn-md {
+  min-height: 38px;
+  padding: 9px 14px;
+  font-size: 16px;
+}
+
+.app-btn-lg {
+  min-height: 44px;
+  padding: 11px 16px;
+  font-size: 17px;
+}
+
+.app-btn-block {
+  width: 100%;
+}
+
+.app-btn-primary {
+  background: var(--color-primary);
+  color: #fff;
+}
+
+.app button.app-btn-primary {
+  background: var(--color-primary);
+  color: #fff;
+}
+
+.app-btn-secondary {
+  background: color-mix(in srgb, var(--color-secondary) 75%, white);
+  color: var(--color-dark);
+}
+
+.app button.app-btn-secondary {
+  background: color-mix(in srgb, var(--color-secondary) 75%, white);
+  color: var(--color-dark);
+}
+
+.app-btn-subtle {
+  background: color-mix(in srgb, var(--color-light) 82%, white);
+  color: var(--color-dark);
+}
+
+.app button.app-btn-subtle {
+  background: var(--color-light);
+  color: var(--color-dark);
+}
+
+.app-btn-dark {
+  background: var(--color-dark);
+  color: #fff;
+}
+
+.app button.app-btn-dark {
+  background: var(--color-dark);
+  color: #fff;
+}
+
+.app-btn-danger {
+  background: var(--color-danger);
+  color: #fff;
+}
+
+.app button.app-btn-danger {
+  background: var(--color-danger);
+  color: #fff;
+}
+
+.app-btn-ghost {
+  background: transparent;
+  color: var(--color-dark);
+}
+
+.app button.app-btn-ghost {
+  background: transparent;
+  color: var(--color-dark);
+}
+
+.app-btn-icon {
+  background: color-mix(in srgb, var(--color-light) 80%, white);
+  color: var(--color-dark);
+  min-width: 34px;
+  padding-inline: 10px;
+}
+
+.app button.app-btn-icon {
+  background: color-mix(in srgb, var(--color-light) 80%, white);
+  color: var(--color-dark);
+}
+
+.columns {
+  display: flex;
+  gap: 20px;
+  align-items: flex-start;
+  flex-wrap: wrap;
+}
+
+.col-left {
+  flex: 4 1 0;
+  min-width: 300px;
+}
+
+.col-right {
+  flex: 8 1 0;
+  min-width: 320px;
+}
+
+.tabs {
+  display: flex;
+  gap: 8px;
+  margin-bottom: 14px;
+  flex-wrap: wrap;
+}
+
+.tabs-inline {
+  margin-top: 0;
+}
+
+.tabbar-row {
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 12px;
+  flex-wrap: wrap;
+  margin-bottom: 24px;
+}
+
+.tabbar-row .tabs {
+  margin-bottom: 0;
+}
+
+.tabbar-right {
+  display: inline-flex;
+  align-items: flex-end;
+}
+
+.tabbar-entity-switcher {
+  display: grid;
+  gap: 4px;
+  min-width: 220px;
+}
+
+.tabbar-entity-label {
+  color: var(--color-text-muted);
+  font-size: 13px;
+  line-height: 1.2;
+}
+
+.app button.tab-button {
+  font-weight: 600;
+  border: 0;
+  border-radius: 999px;
+  background: var(--color-light);
+  color: color-mix(in srgb, var(--color-dark) 78%, transparent);
+  padding: 8px 14px;
+  min-height: 34px;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.app button.tab-button.active {
+  background: var(--color-dark);
+  color: #fff;
+}
+
+.tab-button-badge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 20px;
+  height: 20px;
+  padding: 0 6px;
+  border-radius: 999px;
+  background: color-mix(in srgb, #dc2626 88%, white);
+  color: #fff;
+  font-size: 13px;
+  font-weight: 700;
+  line-height: 1;
+}
+
+.tab-button-badge.active {
+  background: color-mix(in srgb, #fff 18%, #dc2626);
+  color: #fff;
+}
+
+.app .config-view button.tab-button:hover:not(.active) {
+  filter: none;
+  background: color-mix(in srgb, var(--color-light) 76%, #dbeafe);
+  color: color-mix(in srgb, var(--color-dark) 86%, transparent);
+}
+
+.app .config-view button.tab-button,
+.app .config-left-view button.tab-button {
+  min-height: 32px;
+  padding: 6px 12px;
+  font-size: 14px;
+}
+
+.app .config-view .app-btn,
+.app .config-left-view .app-btn {
+  min-height: 32px;
+  padding: 6px 11px;
+  font-size: 14px;
+  border-radius: 10px;
+}
+
+.app .config-left-view button.config-left-save-button {
+  min-height: 28px;
+  padding: 4px 10px;
+  font-size: 13px;
+  border-radius: 8px;
+}
+
+.config-left-view form {
+  display: flex;
+  flex-wrap: nowrap;
+  align-items: center;
+  gap: 8px;
+}
+
+.config-left-view form input,
+.config-left-view form select,
+.config-left-view form .select {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+.config-left-view form .config-left-save-button {
+  flex: 0 0 auto;
+}
+
+.app .config-view button.row-actions-item,
+.app .config-left-view button.row-actions-item {
+  min-height: 30px;
+  padding: 6px 9px;
+  font-size: 14px;
+  border-radius: 8px;
+}
+
+.app .config-view button.kebab-button,
+.app .config-left-view button.kebab-button {
+  min-height: 20px;
+  min-width: 20px;
+}
+
+.app .config-view button.app-btn-primary:hover:not(:disabled),
+.app .config-left-view button.app-btn-primary:hover:not(:disabled) {
+  filter: none;
+  background: color-mix(in srgb, var(--color-primary) 86%, black);
+}
+
+.app .config-view button.app-btn-secondary:hover:not(:disabled),
+.app .config-left-view button.app-btn-secondary:hover:not(:disabled) {
+  filter: none;
+  background: color-mix(in srgb, var(--color-secondary) 84%, black);
+  color: #fff;
+}
+
+.app .config-view button.app-btn-subtle:hover:not(:disabled),
+.app .config-left-view button.app-btn-subtle:hover:not(:disabled) {
+  filter: none;
+  background: color-mix(in srgb, var(--color-light) 78%, var(--color-border));
+}
+
+.app .config-view button.app-btn-danger:hover:not(:disabled),
+.app .config-left-view button.app-btn-danger:hover:not(:disabled) {
+  filter: none;
+  background: color-mix(in srgb, var(--color-danger) 86%, black);
+}
+
+.app .config-view button.app-btn-dark:hover:not(:disabled),
+.app .config-left-view button.app-btn-dark:hover:not(:disabled) {
+  filter: none;
+  background: color-mix(in srgb, var(--color-dark) 88%, black);
+}
+
+.tab-spacer {
+  height: 28px;
+  margin-bottom: 12px;
+}

@@ -1,0 +1,7 @@
+backend/node_modules/
+frontend/dist/
+frontend/node_modules/
+.logs/
+.pids/
+backend/data/finance.db
+backups/

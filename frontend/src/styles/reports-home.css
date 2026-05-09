@@ -1,0 +1,834 @@
+/* Home dashboard, reports, balance, account-group surfaces */
+.home-trend-chart-wrap {
+  width: 100%;
+  min-height: 300px;
+  background: color-mix(in srgb, var(--color-light) 58%, white);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  padding: 8px 8px 0;
+}
+
+.home-projection-chart-wrap {
+  width: 100%;
+  min-height: 240px;
+  background: color-mix(in srgb, var(--color-light) 58%, white);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  padding: 8px 8px 0;
+  margin-top: 8px;
+}
+
+.home-chart-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 10px;
+}
+
+.home-chart-title-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.home-chart-title-row h2 {
+  margin: 0;
+}
+
+.home-chart-range-select {
+  display: grid;
+  min-width: 122px;
+  flex-shrink: 0;
+}
+
+.home-chart-range-select select {
+  min-height: 32px;
+  padding: 6px 28px 6px 10px;
+  font-size: 14px;
+  line-height: 1.2;
+}
+
+.report-transactions-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+  gap: 16px;
+  align-items: start;
+}
+
+.report-breakdown-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 16px;
+}
+
+.report-breakdown-panel {
+  display: grid;
+  gap: 10px;
+  align-content: start;
+}
+
+.report-breakdown-title {
+  margin: 0;
+  font-size: 0.95rem;
+  line-height: 1.3;
+  color: color-mix(in srgb, var(--color-dark) 86%, var(--color-text-muted));
+}
+
+.report-breakdown-chart {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+}
+
+.report-transactions-column {
+  display: grid;
+  gap: 16px;
+  align-content: start;
+}
+
+.report-transactions-subsection {
+  align-content: start;
+}
+
+.report-debt-transactions-wrap {
+  overflow-x: hidden;
+}
+
+.table-scroll.report-debt-transactions-wrap .report-debt-transactions-table {
+  width: 100%;
+  min-width: 100%;
+  max-width: 100%;
+  table-layout: fixed;
+}
+
+.report-debt-transactions-table .report-debt-date-column {
+  width: 104px;
+}
+
+.report-debt-transactions-table .report-debt-amount-column {
+  width: 112px;
+}
+
+.report-debt-transactions-table .report-debt-name-column,
+.report-debt-transactions-table .report-debt-category-column {
+  width: auto;
+}
+
+.report-debt-transactions-table td:not(.cell-right),
+.report-debt-transactions-table th:not(.cell-right) {
+  white-space: normal;
+  overflow-wrap: anywhere;
+  word-break: break-word;
+  hyphens: auto;
+}
+
+.reports-details-section .income-header-row {
+  margin-bottom: 10px;
+}
+
+.reports-detail-actions {
+  display: flex;
+  justify-content: flex-end;
+  align-items: center;
+  gap: 8px;
+  margin: 0 0 10px;
+}
+
+.app .reports-months-section .app-btn-sm,
+.app .reports-detail-actions .app-btn-sm {
+  min-height: 32px;
+  padding: 6px 11px;
+  font-size: 14px;
+}
+
+.app .reports-detail-actions .report-print-button {
+  background: #2563eb;
+  color: #fff;
+}
+
+.app .reports-detail-actions .report-print-button:hover {
+  background: #1d4ed8;
+}
+
+.report-details-stack {
+  display: grid;
+  gap: 18px;
+}
+
+.report-subsection {
+  display: grid;
+  gap: 10px;
+}
+
+.report-subsection > h3 {
+  margin: 0;
+  font-size: 1rem;
+  line-height: 1.3;
+  color: color-mix(in srgb, var(--color-dark) 86%, var(--color-text-muted));
+}
+
+.report-compare-value {
+  display: inline-grid;
+  gap: 3px;
+  font-size: 16px;
+  font-weight: 600;
+  line-height: 1.35;
+}
+
+.report-compare-trend {
+  font-size: 13px;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+}
+
+.report-compare-trend.up {
+  color: #1d4ed8;
+}
+
+.report-compare-trend.down {
+  color: #b45309;
+}
+
+@media print {
+  body {
+    background: #fff;
+  }
+
+  .app {
+    max-width: none;
+    padding: 0;
+  }
+
+  .tabs,
+  .tabbar-row,
+  .mobile-nav,
+  .mobile-toolbar,
+  .mobile-menu-overlay,
+  .reports-detail-actions,
+  .app-banner {
+    display: none !important;
+  }
+
+  .columns,
+  .col-right {
+    display: block !important;
+    width: 100% !important;
+    min-width: 0 !important;
+  }
+
+  .reports-details-section {
+    border: 0;
+    box-shadow: none;
+    padding: 0;
+    margin: 0;
+    background: #fff;
+  }
+
+  .report-details-stack {
+    display: block !important;
+  }
+
+  .report-subsection {
+    break-inside: auto;
+    page-break-inside: auto;
+    margin-bottom: 12px;
+  }
+
+  .report-category-breakdown-section {
+    break-before: page;
+    page-break-before: always;
+  }
+
+  .report-transactions-section,
+  .report-transactions-subsection,
+  .report-transactions-column {
+    break-inside: auto !important;
+    page-break-inside: auto !important;
+  }
+
+  .report-transactions-grid {
+    display: block !important;
+  }
+
+  .reports-details-section .balance-badges {
+    display: grid !important;
+    grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
+    gap: 10px !important;
+  }
+
+  .table-scroll {
+    overflow: visible !important;
+  }
+
+  .table-scroll .table {
+    width: 100% !important;
+    min-width: 0 !important;
+  }
+}
+
+@media (max-width: 1024px) {
+  .report-breakdown-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .home-chart-header {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .home-chart-range-select {
+    align-self: flex-start;
+  }
+}
+
+.input-right {
+  text-align: right;
+}
+
+.empty-state {
+  color: var(--color-text-muted);
+  margin: 8px 0 0;
+}
+
+.recurring-form input,
+.recurring-form select {
+  flex: 1 1 140px;
+}
+
+.table-input {
+  width: 100%;
+}
+
+.institution-config-section,
+.debt-config-section {
+  min-width: 0;
+}
+
+.config-general-card {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 18px 20px;
+  border: 1px solid color-mix(in srgb, var(--color-border) 72%, transparent);
+  border-radius: var(--radius-md);
+  background: linear-gradient(180deg, #ffffff, color-mix(in srgb, #ffffff 82%, #ecfeff));
+}
+
+.config-general-copy {
+  display: grid;
+  gap: 6px;
+}
+
+.config-general-form {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.config-general-form select {
+  min-width: 140px;
+}
+
+.institution-config-table {
+  min-width: 640px;
+}
+
+.debt-config-create-form {
+  display: grid;
+  gap: 8px;
+  grid-template-columns: minmax(180px, 1fr) 130px 130px auto;
+}
+
+.debt-config-create-form input,
+.debt-config-create-form button {
+  width: 100%;
+}
+
+.debt-config-table {
+  min-width: 760px;
+}
+
+.debt-config-origin-input {
+  min-width: 220px;
+}
+
+.debt-config-day-input {
+  min-width: 88px;
+}
+
+.data-export-section {
+  min-width: 0;
+}
+
+.data-export-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+  margin-top: 10px;
+  justify-items: start;
+}
+
+.data-export-grid button {
+  width: auto;
+}
+
+.app .config-view button.config-export-button {
+  min-height: 28px;
+  padding: 4px 10px;
+  font-size: 13px;
+  border-radius: 8px;
+  white-space: nowrap;
+}
+
+.stack-fields {
+  display: grid;
+  gap: 6px;
+}
+
+.balance-month-filter {
+  margin: 0 0 12px;
+}
+
+.balance-month-filter-top {
+  margin: 0 0 16px;
+}
+
+.subtle-text {
+  color: var(--color-text-muted);
+  font-size: 14px;
+  margin-top: 4px;
+}
+
+.subtle-text-error {
+  color: color-mix(in srgb, var(--color-error) 88%, var(--color-dark));
+}
+
+.subtle-text-flush {
+  margin: 0;
+}
+
+.balance-badges {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.accounts-overview-badges {
+  margin-bottom: 12px;
+}
+
+.accounts-groups-toolbar {
+  margin-bottom: 12px;
+}
+
+.accounts-entity-groups {
+  display: grid;
+  gap: 14px;
+}
+
+.accounts-entity-group {
+  overflow: hidden;
+  border: 1px solid color-mix(in srgb, var(--color-border) 82%, white);
+  border-radius: 18px;
+  background:
+    linear-gradient(180deg, color-mix(in srgb, var(--color-surface-muted) 76%, white) 0%, white 100%);
+  box-shadow: 0 12px 28px rgba(15, 23, 42, 0.06);
+}
+
+.accounts-entity-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 14px;
+  padding: 14px 16px;
+  border-bottom: 1px solid color-mix(in srgb, var(--color-border) 74%, white);
+  background: color-mix(in srgb, var(--color-surface-muted) 82%, white);
+  cursor: pointer;
+  transition: background-color 0.18s ease;
+}
+
+.accounts-entity-header:hover {
+  background: color-mix(in srgb, var(--color-secondary) 10%, white);
+}
+
+.accounts-entity-header:focus-visible {
+  outline: 2px solid color-mix(in srgb, var(--color-secondary) 62%, var(--color-primary));
+  outline-offset: -2px;
+}
+
+.accounts-entity-heading {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  text-align: left;
+}
+
+.accounts-entity-heading strong {
+  font-family: "Sora", "Avenir Next", "Segoe UI", sans-serif;
+  font-size: 1rem;
+  line-height: 1.15;
+}
+
+.accounts-entity-heading-meta {
+  color: var(--color-text-muted);
+  font-size: 12px;
+  text-transform: capitalize;
+}
+
+.accounts-entity-meta {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.accounts-entity-stat {
+  min-width: 112px;
+  display: grid;
+  gap: 2px;
+  justify-items: end;
+}
+
+.accounts-entity-stat strong {
+  font-size: 16px;
+}
+
+.accounts-entity-menu {
+  display: inline-flex;
+  align-items: center;
+}
+
+.accounts-entity-group .recurring-table-hint {
+  padding: 12px 16px 0;
+}
+
+.accounts-entity-group .table-scroll {
+  padding: 0 16px 16px;
+}
+
+.accounts-entity-empty {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 16px;
+}
+
+.balance-badge {
+  position: relative;
+  padding: 14px 16px;
+  border: 1px solid transparent;
+  border-radius: 14px;
+}
+
+.balance-badge-label {
+  display: block;
+  margin: 0 0 8px;
+  padding-right: 30px;
+  color: color-mix(in srgb, var(--color-dark) 82%, transparent);
+  font-size: 13px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  line-height: 1.35;
+}
+
+.balance-badge-value {
+  margin: 0;
+  color: var(--color-dark);
+  font-family: "Sora", "Avenir Next", "Segoe UI", sans-serif;
+  font-size: 20px;
+  font-weight: 700;
+  line-height: 1.1;
+}
+
+.balance-badge-info {
+  position: absolute;
+  top: 10px;
+  right: 10px;
+  z-index: 1;
+}
+
+.balance-badge-primary {
+  background: color-mix(in srgb, var(--color-primary) 14%, white);
+  border-color: color-mix(in srgb, var(--color-primary) 35%, white);
+}
+
+.balance-badge-secondary {
+  background: color-mix(in srgb, var(--color-secondary) 18%, white);
+  border-color: color-mix(in srgb, var(--color-secondary) 35%, white);
+}
+
+.balance-badge-success {
+  background: color-mix(in srgb, var(--color-success) 22%, white);
+  border-color: color-mix(in srgb, var(--color-success) 40%, white);
+}
+
+.balance-badge-danger {
+  background: color-mix(in srgb, var(--color-danger) 18%, white);
+  border-color: color-mix(in srgb, var(--color-danger) 40%, white);
+}
+
+.balance-badge-dark {
+  background: color-mix(in srgb, var(--color-dark) 10%, white);
+  border-color: color-mix(in srgb, var(--color-dark) 25%, white);
+}
+
+.balance-badge-light {
+  background: color-mix(in srgb, var(--color-light) 70%, white);
+  border-color: color-mix(in srgb, var(--color-light) 35%, var(--color-border));
+}
+
+.balance-badge-income-light {
+  background: #dbeafe;
+  border-color: #93c5fd;
+}
+
+.balance-badge-expense-light {
+  background: #fee2e2;
+  border-color: #fca5a5;
+}
+
+.info-popover {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+}
+
+.app button.info-button {
+  min-width: 22px;
+  min-height: 22px;
+  margin-left: 0;
+  padding: 0;
+  border: 0;
+  border-radius: 999px;
+  background: color-mix(in srgb, #e2e8f0 42%, white);
+  color: #475569;
+  font-size: 13px;
+  font-weight: 700;
+  line-height: 1;
+  align-items: center;
+  justify-content: center;
+  display: inline-flex;
+  vertical-align: middle;
+}
+
+.app button.info-button:hover {
+  background: color-mix(in srgb, #cbd5e1 55%, white);
+  color: #334155;
+}
+
+.app button.info-button[aria-expanded="true"] {
+  background: var(--color-dark);
+  color: #fff;
+}
+
+.info-popup {
+  position: absolute;
+  top: calc(100% + 8px);
+  left: 0;
+  z-index: 30;
+  width: min(320px, calc(100vw - 48px));
+  padding: 10px 12px;
+  border: 1px solid var(--color-border);
+  border-radius: 10px;
+  background: #fff;
+  box-shadow: var(--shadow-flyout);
+  color: var(--color-dark);
+  font-size: 15px;
+  line-height: 1.45;
+  text-transform: none;
+  letter-spacing: 0;
+  font-weight: 500;
+  white-space: normal;
+}
+
+.balance-badge-info .info-popup {
+  left: auto;
+  right: 0;
+}
+
+.section-header,
+.recurring-header-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  flex-wrap: wrap;
+  margin: 0 0 12px;
+}
+
+.section-header h2,
+.recurring-header-row h2 {
+  margin: 0;
+}
+
+.section-header-actions {
+  display: inline-flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 8px;
+  flex-wrap: wrap;
+  margin-left: auto;
+}
+
+.expense-header-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  flex-wrap: wrap;
+  margin: 0 0 12px;
+}
+
+.expense-header-row h2 {
+  margin: 0;
+}
+
+.debt-header-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  flex-wrap: wrap;
+  margin: 0 0 12px;
+}
+
+.debt-header-row h2 {
+  margin: 0;
+}
+
+.debt-header-actions {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.income-header-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  flex-wrap: wrap;
+  margin: 0 0 12px;
+}
+
+.income-header-row h2 {
+  margin: 0;
+}
+
+.app button.income-add-button {
+  min-height: 30px;
+  padding: 5px 10px;
+  font-size: 14px;
+}
+
+.app button.income-add-button:hover {
+  filter: none;
+  background: color-mix(in srgb, var(--color-primary) 86%, black);
+}
+
+.app button.expense-add-button {
+  min-height: 30px;
+  padding: 5px 10px;
+  font-size: 14px;
+}
+
+.app button.expense-add-button:hover {
+  filter: none;
+  background: color-mix(in srgb, var(--color-primary) 86%, black);
+}
+
+.app button.recurring-add-button:hover {
+  filter: none;
+  background: color-mix(in srgb, var(--color-primary) 86%, black);
+}
+
+.app button.recurring-add-button {
+  min-height: 30px;
+  padding: 5px 10px;
+  font-size: 14px;
+}
+
+.app button.debt-add-button,
+.app button.debt-import-button {
+  min-height: 30px;
+  padding: 5px 10px;
+  font-size: 14px;
+}
+
+.app button.debt-add-button:hover {
+  filter: none;
+  background: color-mix(in srgb, var(--color-primary) 86%, black);
+}
+
+.app button.debt-import-button:hover {
+  filter: none;
+  background: color-mix(in srgb, var(--color-secondary) 84%, black);
+  color: #fff;
+}
+
+.recurring-toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  flex-wrap: wrap;
+  margin: 0 0 12px;
+}
+
+.recurring-filters {
+  display: flex;
+  align-items: center;
+}
+
+.recurring-totals {
+  display: flex;
+  gap: 16px;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  margin: 0;
+}
+
+.recurring-totals p {
+  margin: 0;
+  font-weight: 700;
+}
+
+.recurring-table-hint {
+  margin: 0 0 8px;
+}
+
+.recurring-section-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.recurring-section-tools {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+.recurring-section-total {
+  margin: 0;
+  color: var(--color-text-muted);
+  font-size: 14px;
+  font-weight: 700;
+}
+
+.recurring-section-filter {
+  flex-shrink: 0;
+}
+
+.recurring-pending-section {
+  margin: 0 0 14px;
+}

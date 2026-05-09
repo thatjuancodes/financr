@@ -1,0 +1,230 @@
+{
+  "input": {
+    "transactions": [
+      {
+        "id": "income-1",
+        "date": "2026-03-30",
+        "amount": 5000,
+        "category": "Salary",
+        "type": "income"
+      },
+      {
+        "id": "expense-1",
+        "date": "2026-03-05",
+        "amount": -2000,
+        "category": "Rent",
+        "type": "expense",
+        "expected": true
+      },
+      {
+        "id": "expense-2",
+        "date": "2026-03-12",
+        "amount": -600,
+        "category": "Groceries",
+        "type": "expense",
+        "expected": false
+      },
+      {
+        "id": "expense-3",
+        "date": "2026-03-20",
+        "amount": -200,
+        "category": "Allowance",
+        "type": "expense"
+      }
+    ],
+    "previousMonthTransactions": [
+      {
+        "id": "income-prev-1",
+        "date": "2026-02-28",
+        "amount": 4500,
+        "category": "Salary",
+        "type": "income"
+      },
+      {
+        "id": "expense-prev-1",
+        "date": "2026-02-05",
+        "amount": -1900,
+        "category": "Rent",
+        "type": "expense",
+        "expected": true
+      },
+      {
+        "id": "expense-prev-2",
+        "date": "2026-02-12",
+        "amount": -400,
+        "category": "Groceries",
+        "type": "expense",
+        "expected": false
+      }
+    ],
+    "accounts": [
+      {
+        "id": "cash",
+        "balance": 3200
+      }
+    ],
+    "debts": [
+      {
+        "id": "loan-a",
+        "balance": 5000,
+        "monthlyPayment": 300,
+        "apr": 12
+      }
+    ],
+    "trendSeries": {
+      "income": [
+        4300,
+        4500,
+        5000
+      ],
+      "expenses": [
+        2100,
+        2300,
+        2800
+      ],
+      "net": [
+        2300,
+        2200,
+        2290
+      ]
+    }
+  },
+  "output": {
+    "summary": {
+      "income": 5000,
+      "expenses": 2800,
+      "net": 2200,
+      "savingsRate": 0.44,
+      "incomeMoM": 0.1111,
+      "expenseMoM": 0.2174
+    },
+    "buffer": {
+      "current": 1.1429,
+      "previous": 0.4348,
+      "change": 0.7081
+    },
+    "breakdown": {
+      "fixed": 0,
+      "variable": 2800,
+      "debt": 0,
+      "savings": 2200
+    },
+    "expectedVsUnexpected": {
+      "expected": 2200,
+      "unexpected": 600,
+      "expectedPercent": 0.7857,
+      "unexpectedPercent": 0.2143
+    },
+    "categories": [
+      {
+        "category": "Rent",
+        "amount": 2000,
+        "percent": 0.7143,
+        "delta": 100
+      },
+      {
+        "category": "Groceries",
+        "amount": 600,
+        "percent": 0.2143,
+        "delta": 200
+      },
+      {
+        "category": "Allowance",
+        "amount": 200,
+        "percent": 0.0714,
+        "delta": 200
+      }
+    ],
+    "transactionsList": {
+      "income": [
+        {
+          "id": "income-1",
+          "date": "2026-03-30",
+          "amount": 5000,
+          "category": "Salary",
+          "type": "income",
+          "expected": true,
+          "breakdownType": null
+        }
+      ],
+      "expenses": [
+        {
+          "id": "expense-3",
+          "date": "2026-03-20",
+          "amount": -200,
+          "category": "Allowance",
+          "type": "expense",
+          "expected": true,
+          "breakdownType": null
+        },
+        {
+          "id": "expense-2",
+          "date": "2026-03-12",
+          "amount": -600,
+          "category": "Groceries",
+          "type": "expense",
+          "expected": false,
+          "breakdownType": null
+        },
+        {
+          "id": "expense-1",
+          "date": "2026-03-05",
+          "amount": -2000,
+          "category": "Rent",
+          "type": "expense",
+          "expected": true,
+          "breakdownType": null
+        }
+      ]
+    },
+    "deltas": {
+      "biggestIncrease": "Groceries",
+      "biggestDecrease": null
+    },
+    "trends": {
+      "income": "up",
+      "expenses": "up",
+      "net": "stable"
+    },
+    "debt": {
+      "total": 5000,
+      "monthlyPayment": 300,
+      "dti": 0.06,
+      "debts": [
+        {
+          "id": "loan-a",
+          "balance": 5000,
+          "monthlyPayment": 300,
+          "apr": 0.12
+        }
+      ],
+      "estimatedMonthlyInterest": 50
+    },
+    "projection": {
+      "month6Cash": 16400,
+      "lowestPoint": 3200,
+      "bufferAfter": 5.8571
+    },
+    "optimizations": [
+      {
+        "category": "Rent",
+        "cutPercent": 20,
+        "impact": 2400
+      },
+      {
+        "category": "Rent",
+        "cutPercent": 10,
+        "impact": 1200
+      },
+      {
+        "category": "Groceries",
+        "cutPercent": 20,
+        "impact": 720
+      }
+    ],
+    "allowance": {
+      "total": 200,
+      "percentOfExpenses": 0.0714
+    }
+  }
+}

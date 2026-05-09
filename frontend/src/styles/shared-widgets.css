@@ -1,0 +1,582 @@
+/* Shared menus, chips, banners, late responsive rules */
+.app .kebab-button {
+  min-width: 22px;
+  min-height: 22px;
+  padding: 0;
+  border-radius: 999px;
+  background: color-mix(in srgb, #e2e8f0 42%, white);
+  color: #475569;
+}
+
+.app .kebab-button:hover {
+  background: color-mix(in srgb, #cbd5e1 55%, white);
+  color: #334155;
+}
+
+.row-actions-dropdown {
+  position: absolute;
+  top: calc(100% + 4px);
+  right: 0;
+  z-index: 20;
+  min-width: 164px;
+  display: grid;
+  padding: 6px;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm);
+  background: #fff;
+  box-shadow: var(--shadow-flyout);
+  max-height: min(320px, calc(100vh - 16px));
+  overflow-y: auto;
+  overscroll-behavior: contain;
+}
+
+.row-actions-dropdown.left {
+  right: auto;
+  left: 0;
+}
+
+.row-actions-item {
+  margin: 0;
+  border: 0;
+  background: transparent;
+  text-align: left;
+  justify-content: flex-start;
+  padding: 8px 10px;
+  border-radius: 8px;
+  color: var(--color-dark);
+  font-weight: 400;
+}
+
+.row-actions-item:hover {
+  background: color-mix(in srgb, var(--color-light) 75%, white);
+}
+
+.category-badge-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+
+.category-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 10px;
+  border-radius: 999px;
+  border: 1px solid color-mix(in srgb, var(--color-secondary) 35%, white);
+  background: color-mix(in srgb, var(--color-secondary) 20%, white);
+  color: var(--color-dark);
+  max-width: 100%;
+}
+
+.app button.category-chip-button {
+  min-height: 28px;
+  border: 1px solid color-mix(in srgb, var(--color-secondary) 35%, white);
+  background: color-mix(in srgb, var(--color-secondary) 20%, white);
+  color: var(--color-dark);
+  cursor: pointer;
+}
+
+.app button.category-chip-button:hover {
+  background: color-mix(in srgb, var(--color-secondary) 24%, white);
+}
+
+.app button.category-chip-button.active {
+  outline: 2px solid color-mix(in srgb, var(--color-secondary) 62%, var(--color-primary));
+  outline-offset: 1px;
+}
+
+.app button.category-chip-button.category-chip-add {
+  min-width: 32px;
+  justify-content: center;
+  border-style: dashed;
+  font-size: 18px;
+  line-height: 1;
+  padding: 0 10px;
+}
+
+.category-chip-swatch {
+  width: 14px;
+  height: 14px;
+  border-radius: 999px;
+  border: 1px solid rgba(15, 23, 42, 0.18);
+  flex: 0 0 14px;
+}
+
+.category-chip-label {
+  font-size: 14px;
+  font-weight: 700;
+  line-height: 1.2;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 220px;
+}
+
+.category-chip-preview {
+  margin-left: 8px;
+}
+
+.category-inline-badge {
+  display: inline-flex;
+  align-items: center;
+  max-width: 100%;
+  padding: 2px 8px;
+  border-radius: 999px;
+  border: 1px solid rgba(15, 23, 42, 0.2);
+  font-size: 14px;
+  font-weight: 400;
+  line-height: 1.2;
+  vertical-align: middle;
+}
+
+.home-top-list-scroll {
+  overflow-x: hidden;
+}
+
+.home-top-list-scroll .home-top-list-table {
+  width: 100%;
+  min-width: 0;
+  table-layout: fixed;
+}
+
+.home-top-list-scroll .home-top-list-table th,
+.home-top-list-scroll .home-top-list-table td {
+  padding: 7px 8px;
+  font-size: 14px;
+}
+
+.home-top-list-scroll .home-top-list-rank-cell {
+  width: 44px;
+  white-space: nowrap;
+}
+
+.home-top-list-scroll .home-top-list-total-cell {
+  width: 92px;
+  white-space: nowrap;
+}
+
+.home-top-list-scroll .home-top-list-percent-cell {
+  width: 56px;
+  white-space: nowrap;
+}
+
+.home-top-list-scroll .home-top-list-category-cell {
+  min-width: 0;
+}
+
+.home-top-list-scroll .home-top-list-category-cell .category-inline-badge {
+  max-width: 100%;
+  font-size: 13px;
+  padding: 2px 6px;
+  overflow-wrap: anywhere;
+  word-break: break-word;
+}
+
+.category-color-grid {
+  display: grid;
+  grid-template-columns: repeat(6, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.app button.category-color-swatch {
+  min-height: 32px;
+  min-width: 32px;
+  border-radius: 10px;
+  border: 2px solid rgba(15, 23, 42, 0.12);
+  padding: 0;
+  background: transparent;
+}
+
+.app button.category-color-swatch.selected {
+  border-color: rgba(15, 23, 42, 0.46);
+  box-shadow: 0 0 0 2px rgba(15, 23, 42, 0.08);
+}
+
+.badge-button-group {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px 12px;
+}
+
+.badge-button {
+  border-radius: 999px;
+}
+
+.suggestion-badge-group {
+  margin-top: 10px;
+  gap: 16px 18px;
+}
+
+.suggestion-badge {
+  min-height: 34px;
+  padding-inline: 14px;
+}
+
+.suggestion-chip-list {
+  gap: 10px;
+}
+
+.suggestion-chip {
+  gap: 8px;
+}
+
+.app button.suggestion-chip-selected {
+  border-color: color-mix(in srgb, var(--color-primary) 45%, var(--color-secondary));
+  background: color-mix(in srgb, var(--color-primary) 16%, white);
+}
+
+.suggestion-chip-amount {
+  font-size: 13px;
+  font-weight: 600;
+  line-height: 1.2;
+  color: color-mix(in srgb, var(--color-dark) 74%, transparent);
+  white-space: nowrap;
+}
+
+.loan-origin-badge-group {
+  margin-top: 8px;
+}
+
+.expense-edit-drawer .loan-origin-badge-group {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.mobile-toolbar {
+  margin-bottom: 12px;
+}
+
+.mobile-add-button {
+  width: 100%;
+}
+
+.mobile-nav {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 12px;
+}
+
+.mobile-nav-main {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.mobile-nav.with-switcher {
+  flex-direction: column;
+  align-items: stretch;
+  gap: 8px;
+}
+
+.mobile-nav-switcher {
+  width: 100%;
+}
+
+.mobile-nav-switcher .tabbar-entity-switcher {
+  min-width: 0;
+}
+
+.mobile-nav-title {
+  font-family: "Sora", "Avenir Next", "Segoe UI", sans-serif;
+  font-size: 20px;
+  font-weight: 700;
+}
+
+.hamburger-button {
+  min-width: 44px;
+  min-height: 44px;
+  padding: 8px 12px;
+  border-radius: 12px;
+}
+
+.mobile-menu-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 60;
+  background: linear-gradient(180deg, var(--color-light), #ffffff);
+  padding: 16px;
+  display: flex;
+  flex-direction: column;
+}
+
+.mobile-menu-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 20px;
+}
+
+.mobile-menu-title {
+  font-family: "Sora", "Avenir Next", "Segoe UI", sans-serif;
+  font-size: 24px;
+  font-weight: 800;
+}
+
+.mobile-menu-close {
+  min-width: 44px;
+  min-height: 44px;
+  padding: 6px 12px;
+  border-radius: 12px;
+}
+
+.mobile-menu-list {
+  display: grid;
+  gap: 10px;
+}
+
+.mobile-menu-item {
+  width: 100%;
+  text-align: left;
+  justify-content: flex-start;
+  align-items: center;
+  justify-content: space-between;
+  font-size: 19px;
+  background: var(--color-light);
+}
+
+.mobile-menu-item.active {
+  background: var(--color-dark);
+  color: #fff;
+  font-weight: 700;
+}
+
+.mobile-menu-item-label {
+  min-width: 0;
+}
+
+.mobile-menu-item-badge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 22px;
+  height: 22px;
+  padding: 0 6px;
+  border-radius: 999px;
+  background: color-mix(in srgb, #dc2626 88%, white);
+  color: #fff;
+  font-size: 13px;
+  font-weight: 700;
+  line-height: 1;
+}
+
+.mobile-menu-item-badge.active {
+  background: color-mix(in srgb, #fff 18%, #dc2626);
+}
+
+.transactions-page-sections {
+  display: grid;
+  gap: 28px;
+}
+
+.modal-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 50;
+  background: rgba(4, 10, 22, 0.46);
+  display: flex;
+  align-items: flex-end;
+  justify-content: center;
+  padding: 16px;
+}
+
+.modal-card {
+  width: min(100%, 720px);
+  max-height: calc(100vh - 32px);
+  overflow: auto;
+  background: #fff;
+  border-radius: 16px;
+  padding: 16px;
+  border: 1px solid var(--color-border);
+  box-shadow: var(--shadow-flyout);
+}
+
+.modal-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 12px;
+}
+
+.modal-header h2 {
+  margin: 0;
+}
+
+.modal-close-button {
+  min-width: 36px;
+  padding: 4px 10px;
+}
+
+.app-banner {
+  margin: 0 0 12px;
+  padding: 10px 12px;
+  border-radius: var(--radius-sm);
+  border: 1px solid transparent;
+  font-size: 16px;
+  font-weight: 600;
+}
+
+.app-banner-success {
+  color: color-mix(in srgb, var(--color-primary) 65%, var(--color-dark));
+  background: color-mix(in srgb, var(--color-success) 18%, white);
+  border-color: color-mix(in srgb, var(--color-success) 35%, white);
+}
+
+.app-banner-error {
+  color: color-mix(in srgb, var(--color-error) 85%, var(--color-dark));
+  background: color-mix(in srgb, var(--color-error) 12%, white);
+  border-color: color-mix(in srgb, var(--color-error) 30%, white);
+}
+
+.app-banner-info {
+  color: color-mix(in srgb, var(--color-dark) 80%, transparent);
+  background: color-mix(in srgb, var(--color-secondary) 12%, white);
+  border-color: color-mix(in srgb, var(--color-secondary) 28%, white);
+}
+
+@media (max-width: 1024px) {
+  .app {
+    padding: 12px;
+  }
+
+  .columns.compact {
+    display: block;
+  }
+
+  .columns.compact .col-left,
+  .columns.compact .col-right {
+    width: 100%;
+    min-width: 0;
+  }
+
+  .columns.compact .col-right {
+    flex: none;
+  }
+
+  .tabbar-row {
+    align-items: stretch;
+  }
+
+  .tabbar-right {
+    width: 100%;
+  }
+
+  .tabbar-entity-switcher {
+    width: 100%;
+    min-width: 0;
+  }
+
+  .filter-row {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .filters select,
+  .filters .select,
+  .filters input {
+    width: 100%;
+  }
+
+  .total-right {
+    width: 100%;
+    text-align: left;
+  }
+
+  .balance-badges {
+    grid-template-columns: 1fr;
+  }
+
+  .accounts-entity-header {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+
+  .accounts-entity-meta {
+    width: 100%;
+    justify-content: space-between;
+  }
+
+  .accounts-entity-stat {
+    justify-items: start;
+  }
+
+  .recurring-overview-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .projections-layout,
+  .projection-results-grid,
+  .projection-editor-grid,
+  .projection-assumptions-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .projection-move-banner-controls {
+    grid-template-columns: 1fr;
+  }
+
+  .projection-move-banner-actions {
+    justify-content: stretch;
+  }
+
+  .projection-move-banner-actions button {
+    flex: 1 1 0;
+  }
+
+  .projection-assumption-row {
+    grid-template-columns: 1fr;
+  }
+
+  .modal-card form {
+    display: grid;
+    gap: 12px;
+  }
+
+  .modal-card form input,
+  .modal-card form select,
+  .modal-card form button,
+  .modal-card form .select,
+  .modal-card form textarea {
+    width: 100%;
+    min-height: 42px;
+    font-size: 18px;
+  }
+
+  .modal-card .recurring-form input,
+  .modal-card .recurring-form select {
+    flex: none;
+  }
+
+  .debt-config-create-form {
+    grid-template-columns: 1fr;
+  }
+
+  .data-export-grid {
+    grid-template-columns: 1fr;
+    justify-items: stretch;
+  }
+
+  .data-export-grid button {
+    width: 100%;
+  }
+
+  .debt-payoff-actions {
+    flex-direction: column-reverse;
+  }
+
+  .side-drawer {
+    width: min(100%, 560px);
+  }
+}
+
+@media (max-width: 720px) {
+  .accounts-entity-empty {
+    align-items: stretch;
+    flex-direction: column;
+  }
+}

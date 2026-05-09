@@ -1,0 +1,6 @@
+/* CSS entrypoint. Keep import order stable to preserve cascade. */
+@import "./styles/base.css";
+@import "./styles/reports-home.css";
+@import "./styles/projections-recurring.css";
+@import "./styles/budgeting.css";
+@import "./styles/shared-widgets.css";

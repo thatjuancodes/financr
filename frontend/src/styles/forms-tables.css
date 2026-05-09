@@ -1,0 +1,587 @@
+/* Form controls, config inline forms, tables, row-level utilities */
+.app form {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  margin-bottom: 0;
+}
+
+.app input,
+.app select,
+.app .select,
+.app textarea {
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm);
+  background: var(--color-surface);
+  color: var(--color-dark);
+  min-height: 40px;
+  padding: 8px 12px;
+  font-size: 16px;
+  line-height: 1.25;
+  outline: none;
+  transition: border-color 0.2s ease, box-shadow 0.2s ease, background-color 0.2s ease;
+}
+
+.app select,
+.app .select {
+  -webkit-appearance: none;
+  -moz-appearance: none;
+  appearance: none;
+  padding-right: 36px;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='8' viewBox='0 0 12 8' fill='none'%3E%3Cpath d='M1 1.5L6 6.5L11 1.5' stroke='%2364748b' stroke-width='1.7' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E");
+  background-repeat: no-repeat;
+  background-position: right 12px center;
+  background-size: 12px 8px;
+}
+
+.app input:focus,
+.app select:focus,
+.app .select:focus,
+.app textarea:focus {
+  border-color: color-mix(in srgb, var(--color-secondary) 60%, var(--color-primary));
+  box-shadow: 0 0 0 4px color-mix(in srgb, var(--color-secondary) 24%, transparent);
+}
+
+.app input::placeholder,
+.app textarea::placeholder {
+  color: color-mix(in srgb, var(--color-text-muted) 80%, transparent);
+}
+
+.app input[type="checkbox"],
+.app input[type="radio"] {
+  min-height: auto;
+  width: 16px;
+  height: 16px;
+  padding: 0;
+  accent-color: var(--color-primary);
+}
+.config-left-view form {
+  display: flex;
+  flex-wrap: nowrap;
+  align-items: center;
+  gap: 8px;
+}
+
+.config-left-view form input,
+.config-left-view form select,
+.config-left-view form .select {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+.config-left-view form .config-left-save-button {
+  flex: 0 0 auto;
+}
+.table {
+  width: 100%;
+  border-collapse: separate;
+  border-spacing: 0;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  overflow: hidden;
+  background: var(--color-surface);
+}
+
+.table-scroll {
+  width: 100%;
+  max-width: 100%;
+  overflow-x: auto;
+  overflow-y: hidden;
+  -webkit-overflow-scrolling: touch;
+}
+
+.table-scroll .table {
+  min-width: 100%;
+  width: max-content;
+}
+
+.clickable-row {
+  cursor: pointer;
+}
+
+.clickable-row:hover td,
+.clickable-row:focus-visible td,
+.clickable-row.active td {
+  background: color-mix(in srgb, var(--color-primary) 8%, white);
+}
+
+.table th,
+.table td {
+  padding: 9px 10px;
+  font-size: 15px;
+}
+
+.table th {
+  border-bottom: 1px solid var(--color-border);
+  text-align: left;
+  color: var(--color-text-muted);
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  background: color-mix(in srgb, var(--color-light) 70%, white);
+}
+
+.table th.cell-right {
+  text-align: right;
+}
+
+.table td {
+  border-top: 1px solid color-mix(in srgb, var(--color-border) 68%, white);
+}
+
+.table tbody tr:nth-child(odd) {
+  background: color-mix(in srgb, var(--color-light) 40%, white);
+}
+
+.table tbody tr.debt-group-row {
+  cursor: pointer;
+}
+
+.table.debt-table {
+  table-layout: fixed;
+  width: 100%;
+}
+
+.table.debt-cycle-table {
+  table-layout: fixed;
+  width: 100%;
+}
+
+.debt-group-row td {
+  background: color-mix(in srgb, var(--color-secondary) 15%, var(--color-light));
+  border-top: 1px solid color-mix(in srgb, var(--color-secondary) 25%, var(--color-border));
+  font-weight: 700;
+  vertical-align: middle;
+}
+
+.table tbody tr.debt-group-row:hover {
+  background: color-mix(in srgb, var(--color-secondary) 20%, var(--color-light));
+}
+
+.table tbody tr.debt-group-row:focus-visible {
+  outline: 2px solid color-mix(in srgb, var(--color-secondary) 62%, var(--color-primary));
+  outline-offset: -2px;
+}
+
+.table tbody tr.debt-group-column-row {
+  background: color-mix(in srgb, var(--color-light) 70%, white);
+}
+
+.table tbody tr.debt-group-column-row th {
+  border-bottom: 1px solid var(--color-border);
+  text-align: left;
+  color: var(--color-text-muted);
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  background: color-mix(in srgb, var(--color-light) 70%, white);
+}
+
+.table tbody tr.debt-group-column-row th.cell-right {
+  text-align: right;
+}
+
+.debt-group-indicator-cell {
+  width: 42px;
+  white-space: nowrap;
+}
+
+.debt-group-chevron {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 16px;
+  font-size: 16px;
+  line-height: 1;
+}
+
+.debt-group-title-cell,
+.debt-group-metric-cell {
+  white-space: nowrap;
+}
+
+.debt-group-metric-cell {
+  width: 112px;
+}
+
+.debt-group-metric-label {
+  display: block;
+  font-size: 12px;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--color-text-muted);
+  font-weight: 700;
+}
+
+.debt-group-metric-value {
+  display: block;
+  color: var(--color-dark);
+}
+
+.debt-group-payoff-button {
+  white-space: nowrap;
+  align-self: auto;
+  flex-shrink: 0;
+  margin-left: 0;
+}
+
+.debt-group-action-cell {
+  text-align: right;
+  white-space: nowrap;
+}
+
+.table.debt-table col.debt-select-column,
+.table th.debt-select-column,
+.table td.debt-select-column {
+  width: 42px;
+}
+
+.table.debt-table col.debt-date-column,
+.table.debt-cycle-table col.debt-date-column,
+.table th.debt-date-column,
+.table td.debt-date-column {
+  width: 168px;
+  white-space: nowrap;
+}
+
+.table.debt-cycle-table col.debt-due-column,
+.table th.debt-due-column,
+.table td.debt-due-column {
+  width: 152px;
+  white-space: nowrap;
+}
+
+.table.debt-table col.debt-name-column,
+.table.debt-cycle-table col.debt-name-column,
+.table th.debt-name-column,
+.table td.debt-name-column {
+  width: 280px;
+}
+
+.table.debt-table col.debt-category-column,
+.table.debt-cycle-table col.debt-category-column,
+.table th.debt-category-column,
+.table td.debt-category-column {
+  width: 160px;
+}
+
+.table.debt-table col.debt-amount-column,
+.table.debt-cycle-table col.debt-amount-column,
+.table th.debt-amount-column,
+.table td.debt-amount-column {
+  width: 210px;
+  white-space: nowrap;
+}
+
+.table td.debt-name-column {
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.debt-group-action-header.debt-action-column,
+.debt-row-action-spacer.debt-action-column,
+.debt-group-action-cell.debt-action-column {
+  width: auto;
+}
+
+.debt-payoff-modal-card {
+  width: min(100%, 460px);
+}
+
+.debt-payoff-form {
+  display: grid;
+  gap: 10px;
+  margin-top: 12px;
+}
+
+.debt-payoff-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+}
+
+.cell-left {
+  padding-left: 12px;
+}
+
+.cell-right {
+  text-align: right;
+}
+
+.table th.expense-amount-column,
+.table td.expense-amount-column {
+  width: 124px;
+  white-space: nowrap;
+  text-align: left;
+}
+
+.table th.expense-expectation-column,
+.table td.expense-expectation-column {
+  width: 124px;
+  white-space: nowrap;
+}
+
+.table th.recurring-amount-column,
+.table td.recurring-amount-column {
+  width: 124px;
+  white-space: nowrap;
+  text-align: left;
+}
+
+.table.recurring-due-table,
+.table.recurring-records-table {
+  table-layout: fixed;
+  width: 100%;
+}
+
+.table.recurring-due-table col.recurring-due-column,
+.table.recurring-records-table col.recurring-due-column,
+.table th.recurring-due-column,
+.table td.recurring-due-column {
+  width: 108px;
+  white-space: nowrap;
+}
+
+.table.recurring-due-table col.recurring-name-column,
+.table.recurring-records-table col.recurring-name-column,
+.table th.recurring-name-column,
+.table td.recurring-name-column {
+  width: 190px;
+}
+
+.table td.recurring-name-column {
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.table.recurring-due-table col.recurring-category-column,
+.table.recurring-records-table col.recurring-category-column,
+.table th.recurring-category-column,
+.table td.recurring-category-column {
+  width: 138px;
+  white-space: nowrap;
+}
+
+.table.recurring-due-table col.recurring-frequency-column,
+.table.recurring-records-table col.recurring-frequency-column,
+.table th.recurring-frequency-column,
+.table td.recurring-frequency-column {
+  width: 112px;
+  white-space: nowrap;
+}
+
+.table.recurring-due-table col.recurring-last-column,
+.table.recurring-records-table col.recurring-last-column,
+.table th.recurring-last-column,
+.table td.recurring-last-column {
+  width: 118px;
+  white-space: nowrap;
+}
+
+.table.recurring-due-table col.due-action-column,
+.table.recurring-due-table th.due-action-column,
+.table.recurring-due-table td.due-action-column {
+  width: 88px;
+  white-space: nowrap;
+  text-align: center;
+}
+
+.cell-actions {
+  padding-left: 8px;
+  text-align: right;
+}
+
+.cell-actions button {
+  margin-left: 8px;
+}
+
+.due-action-buttons {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+}
+
+.app button.due-action-icon,
+.due-action-icon {
+  margin-left: 0;
+  min-width: 24px;
+  min-height: 24px;
+  padding: 0;
+  border-radius: 999px;
+  border: 1px solid color-mix(in srgb, var(--color-border) 75%, white);
+  background: #fff;
+  color: var(--color-dark);
+  font-size: 16px;
+  line-height: 1;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+}
+
+.app button.due-action-confirm,
+.due-action-confirm {
+  color: #15803d;
+  border-color: #86efac;
+  background: #f0fdf4;
+}
+
+.app button.due-action-confirm:hover,
+.due-action-confirm:hover {
+  background: #dcfce7;
+  border-color: #4ade80;
+}
+
+.app button.due-action-skip,
+.due-action-skip {
+  color: #b91c1c;
+  border-color: #fca5a5;
+  background: #fef2f2;
+}
+
+.app button.due-action-skip:hover,
+.due-action-skip:hover {
+  background: #fee2e2;
+  border-color: #f87171;
+}
+
+.expense-category-cell {
+  position: relative;
+}
+
+.app button.expense-category-badge,
+.app .expense-category-badge-static {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  max-width: 165px;
+  min-height: 20px;
+  padding: 1px 6px;
+  border: 1px solid color-mix(in srgb, var(--color-secondary) 40%, white);
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--color-secondary) 18%, white);
+  color: var(--color-dark);
+  font-size: 12px;
+  font-weight: 400;
+  line-height: 1.2;
+  box-sizing: border-box;
+  vertical-align: middle;
+}
+
+.app button.expense-category-badge:hover {
+  background: color-mix(in srgb, var(--color-secondary) 20%, white);
+}
+
+.app button.expense-category-badge.open {
+  background: color-mix(in srgb, var(--color-secondary) 21%, white);
+}
+
+.app button.expense-expectation-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  max-width: 116px;
+  min-height: 20px;
+  padding: 1px 6px;
+  border-radius: 999px;
+  font-size: 12px;
+  font-weight: 400;
+  line-height: 1.2;
+}
+
+.app button.expense-expectation-badge.unexpected {
+  border: 1px solid color-mix(in srgb, #fca5a5 55%, white);
+  background: #fef2f2;
+  color: #7f1d1d;
+}
+
+.app button.expense-expectation-badge.expected {
+  border: 1px solid color-mix(in srgb, #86efac 55%, white);
+  background: #f0fdf4;
+  color: #14532d;
+}
+
+.app button.expense-expectation-badge.unexpected:hover,
+.app button.expense-expectation-badge.unexpected.open {
+  background: #fee2e2;
+}
+
+.app button.expense-expectation-badge.expected:hover,
+.app button.expense-expectation-badge.expected.open {
+  background: #dcfce7;
+}
+
+.expense-category-badge-label {
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.expense-category-badge-caret {
+  font-size: 11px;
+  opacity: 0.8;
+}
+
+.row-actions-dropdown.expense-category-dropdown {
+  min-width: 120px;
+  padding: 3px;
+}
+
+.app button.row-actions-item.expense-category-dropdown-item {
+  padding: 4px 7px;
+  min-height: 24px;
+  font-size: 13px;
+}
+
+.app button.sort-icon-button {
+  min-width: 20px;
+  min-height: 20px;
+  border: 0;
+  border-radius: 999px;
+  background: color-mix(in srgb, #e2e8f0 45%, white);
+  color: #475569;
+  font-size: 13px;
+  font-weight: 700;
+  line-height: 1;
+  padding: 0;
+  margin-left: 6px;
+  vertical-align: middle;
+}
+
+.app button.sort-icon-button:hover {
+  background: color-mix(in srgb, #cbd5e1 55%, white);
+  color: #334155;
+}
+
+.app button.sort-icon-button.active {
+  background: var(--color-dark);
+  color: #fff;
+}
+
+.total {
+  margin: 8px 0 12px;
+}
+
+.filter-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin: 8px 0 14px;
+}
+
+.filters {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  flex-wrap: wrap;
+}
+
+.total-right {
+  text-align: right;
+  margin: 0;
+  font-weight: 700;
+}
