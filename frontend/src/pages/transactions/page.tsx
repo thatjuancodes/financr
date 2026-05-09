@@ -506,8 +506,8 @@ export default function Transactions() {
           <div
             className={`${
               isFilterDocked
-                ? "fixed inset-x-0 top-0 z-[60] bg-bg/95 py-2 backdrop-blur"
-                : "sticky top-0 z-[60] -mx-4 bg-bg/95 px-4 py-2 backdrop-blur md:-mx-8 md:px-8"
+                ? "fixed inset-x-0 top-0 z-[40] bg-bg/95 py-2 backdrop-blur"
+                : "sticky top-0 z-[40] -mx-4 bg-bg/95 px-4 py-2 backdrop-blur md:-mx-8 md:px-8"
             }`}
           >
           <Card className={`${isFilterDocked ? "rounded-none border-x-0 shadow-lg" : "shadow-md"} p-4`}>
