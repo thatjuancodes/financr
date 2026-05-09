@@ -57,13 +57,17 @@ export default function Transactions() {
   const [selectedMonth, setSelectedMonth] = useState(currentMonth);
   const [selectedCategories, setSelectedCategories] = useState<string[]>([]);
   const [isCategoryMenuOpen, setIsCategoryMenuOpen] = useState(false);
+  const [isMonthMenuOpen, setIsMonthMenuOpen] = useState(false);
   const [sortOrder, setSortOrder] = useState<SortOrder>("date_desc");
   const [isSortMenuOpen, setIsSortMenuOpen] = useState(false);
   const [groupBy, setGroupBy] = useState<GroupBy>("date");
   const [isGroupMenuOpen, setIsGroupMenuOpen] = useState(false);
+  const [isFilterDocked, setIsFilterDocked] = useState(false);
   const categoryMenuRef = useRef<HTMLDivElement | null>(null);
+  const monthMenuRef = useRef<HTMLDivElement | null>(null);
   const sortMenuRef = useRef<HTMLDivElement | null>(null);
   const groupMenuRef = useRef<HTMLDivElement | null>(null);
+  const filterAnchorRef = useRef<HTMLDivElement | null>(null);
 
   const currency = balance?.currency_code || "PHP";
   const sortedTransactions = useMemo(
@@ -171,6 +175,9 @@ export default function Transactions() {
       if (!categoryMenuRef.current?.contains(event.target as Node)) {
         setIsCategoryMenuOpen(false);
       }
+      if (!monthMenuRef.current?.contains(event.target as Node)) {
+        setIsMonthMenuOpen(false);
+      }
       if (!sortMenuRef.current?.contains(event.target as Node)) {
         setIsSortMenuOpen(false);
       }
@@ -182,6 +189,21 @@ export default function Transactions() {
     document.addEventListener("mousedown", handlePointerDown);
     return () => {
       document.removeEventListener("mousedown", handlePointerDown);
+    };
+  }, []);
+
+  useEffect(() => {
+    function handleFilterDockedState() {
+      const anchorTop = filterAnchorRef.current?.getBoundingClientRect().top ?? 0;
+      const shouldDock = window.scrollY > 0 && anchorTop <= 0;
+      setIsFilterDocked(shouldDock);
+    }
+
+    window.addEventListener("scroll", handleFilterDockedState, { passive: true });
+    window.addEventListener("resize", handleFilterDockedState);
+    return () => {
+      window.removeEventListener("scroll", handleFilterDockedState);
+      window.removeEventListener("resize", handleFilterDockedState);
     };
   }, []);
 
@@ -241,6 +263,7 @@ export default function Transactions() {
     sortOptions.find((option) => option.value === sortOrder)?.label || "Order";
   const groupByLabel =
     groupOptions.find((option) => option.value === groupBy)?.label || "Group";
+  const monthLabelText = selectedMonth ? monthLabel(selectedMonth) : "All months";
   const expenseSummary = useMemo(() => {
     const normalizeExpectation = (value: unknown): ExpenseExpectation =>
       value === "expected" ? "expected" : "unexpected";
@@ -476,184 +499,241 @@ export default function Transactions() {
           ))}
         </div>
 
-        <Card className="mb-4 p-4">
-          <div className="grid gap-3 lg:grid-cols-[1.3fr,0.7fr,0.8fr]">
-            <div className="relative">
-              <i className="ri-search-line absolute left-3 top-1/2 -translate-y-1/2 text-sm text-text-muted" />
-              <input
-                value={search}
-                onChange={(event) => setSearch(event.target.value)}
-                placeholder="Search by note, category, or account"
-                className="w-full rounded-lg border border-transparent bg-bg-subtle py-2.5 pl-9 pr-4 text-sm outline-none transition focus:border-accent"
-              />
-            </div>
-            <select
-              value={selectedMonth}
-              onChange={(event) => setSelectedMonth(event.target.value)}
-              className="rounded-lg bg-bg-subtle px-3 py-2.5 text-sm text-text outline-none"
-            >
-              <option value="">All months</option>
-              {monthOptions.map((value) => (
-                <option key={value} value={value}>
-                  {monthLabel(value)}
-                </option>
-              ))}
-            </select>
-            <div className="flex items-center gap-1 rounded-lg bg-bg-subtle p-1">
-              {(["all", "expense", "income", "transfer", "debt"] as FilterType[]).map((type) => (
+        <div
+          ref={filterAnchorRef}
+          className={isFilterDocked ? "mb-[10.5rem] md:mb-[8.5rem]" : "mb-4"}
+        >
+          <div
+            className={`${
+              isFilterDocked
+                ? "fixed inset-x-0 top-0 z-[60] bg-bg/95 py-2 backdrop-blur"
+                : "sticky top-0 z-[60] -mx-4 bg-bg/95 px-4 py-2 backdrop-blur md:-mx-8 md:px-8"
+            }`}
+          >
+          <Card className={`${isFilterDocked ? "rounded-none border-x-0 shadow-lg" : "shadow-md"} p-4`}>
+            <div className="grid gap-3 lg:grid-cols-[1.3fr,0.7fr,0.8fr]">
+              <div className="relative">
+                <i className="ri-search-line absolute left-3 top-1/2 -translate-y-1/2 text-sm text-text-muted" />
+                <input
+                  value={search}
+                  onChange={(event) => setSearch(event.target.value)}
+                  placeholder="Search by note, category, or account"
+                  className="w-full rounded-lg border border-transparent bg-bg-subtle py-2.5 pl-9 pr-4 text-sm outline-none transition focus:border-accent"
+                />
+              </div>
+              <div className="relative" ref={monthMenuRef}>
                 <button
-                  key={type}
-                  onClick={() => setActiveType(type)}
-                  className={`flex-1 rounded-md px-3 py-2 text-xs font-medium capitalize transition-colors ${
-                    activeType === type ? "bg-white text-text shadow-sm" : "text-text-secondary"
-                  }`}
+                  type="button"
+                  onClick={() => setIsMonthMenuOpen((open) => !open)}
+                  className="flex w-full items-center justify-between rounded-lg bg-bg-subtle px-3 py-2.5 text-left text-sm text-text outline-none transition hover:bg-bg"
                 >
-                  {type}
+                  <span className="truncate">{monthLabelText}</span>
+                  <i
+                    className={`ri-arrow-down-s-line text-base text-text-secondary transition-transform ${
+                      isMonthMenuOpen ? "rotate-180" : ""
+                    }`}
+                  />
                 </button>
-              ))}
+                {isMonthMenuOpen ? (
+                  <div className="absolute left-0 right-0 top-[calc(100%+0.5rem)] z-20 max-h-72 overflow-y-auto rounded-xl border border-slate-200 bg-white p-2 shadow-xl">
+                    <div className="space-y-1">
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setSelectedMonth("");
+                          setIsMonthMenuOpen(false);
+                        }}
+                        className={`flex w-full items-center justify-between rounded-lg px-3 py-2 text-sm transition ${
+                          selectedMonth === ""
+                            ? "bg-accent text-white"
+                            : "text-text-secondary hover:bg-bg-subtle hover:text-text"
+                        }`}
+                      >
+                        <span>All months</span>
+                        {selectedMonth === "" ? <i className="ri-check-line text-base" /> : null}
+                      </button>
+                      {monthOptions.map((value) => {
+                        const active = selectedMonth === value;
+                        return (
+                          <button
+                            key={value}
+                            type="button"
+                            onClick={() => {
+                              setSelectedMonth(value);
+                              setIsMonthMenuOpen(false);
+                            }}
+                            className={`flex w-full items-center justify-between rounded-lg px-3 py-2 text-sm transition ${
+                              active
+                                ? "bg-accent text-white"
+                                : "text-text-secondary hover:bg-bg-subtle hover:text-text"
+                            }`}
+                          >
+                            <span>{monthLabel(value)}</span>
+                            {active ? <i className="ri-check-line text-base" /> : null}
+                          </button>
+                        );
+                      })}
+                    </div>
+                  </div>
+                ) : null}
+              </div>
+              <div className="flex items-center gap-1 rounded-lg bg-bg-subtle p-1">
+                {(["all", "expense", "income", "transfer", "debt"] as FilterType[]).map((type) => (
+                  <button
+                    key={type}
+                    onClick={() => setActiveType(type)}
+                    className={`flex-1 rounded-md px-3 py-2 text-xs font-medium capitalize transition-colors ${
+                      activeType === type ? "bg-white text-text shadow-sm" : "text-text-secondary"
+                    }`}
+                  >
+                    {type}
+                  </button>
+                ))}
+              </div>
             </div>
-          </div>
 
-          <div className="mt-3 grid gap-3 md:grid-cols-3">
-            <div className="relative" ref={categoryMenuRef}>
-              <button
-                type="button"
-                onClick={() => setIsCategoryMenuOpen((open) => !open)}
-                className="flex w-full items-center justify-between rounded-lg bg-bg-subtle px-3 py-2.5 text-left text-sm text-text outline-none transition hover:bg-bg"
-              >
-                <span className="truncate">{categoryFilterLabel}</span>
-                <i
-                  className={`ri-arrow-down-s-line text-base text-text-secondary transition-transform ${
-                    isCategoryMenuOpen ? "rotate-180" : ""
-                  }`}
-                />
-              </button>
-              {isCategoryMenuOpen ? (
-                <div className="absolute left-0 right-0 top-[calc(100%+0.5rem)] z-20 rounded-xl border border-slate-200 bg-white p-3 shadow-xl">
-                  <div className="mb-3 flex items-center justify-between gap-3">
-                    <p className="text-xs font-semibold uppercase tracking-wide text-text-secondary">
-                      Categories
-                    </p>
-                    <button
-                      type="button"
-                      onClick={() => setSelectedCategories([])}
-                      className="text-xs font-medium text-accent transition hover:text-accent-dark"
-                    >
-                      Clear all
-                    </button>
+            <div className="mt-3 grid gap-3 md:grid-cols-3">
+              <div className="relative" ref={categoryMenuRef}>
+                <button
+                  type="button"
+                  onClick={() => setIsCategoryMenuOpen((open) => !open)}
+                  className="flex w-full items-center justify-between rounded-lg bg-bg-subtle px-3 py-2.5 text-left text-sm text-text outline-none transition hover:bg-bg"
+                >
+                  <span className="truncate">{categoryFilterLabel}</span>
+                  <i
+                    className={`ri-arrow-down-s-line text-base text-text-secondary transition-transform ${
+                      isCategoryMenuOpen ? "rotate-180" : ""
+                    }`}
+                  />
+                </button>
+                {isCategoryMenuOpen ? (
+                  <div className="absolute left-0 right-0 top-[calc(100%+0.5rem)] z-20 rounded-xl border border-slate-200 bg-white p-3 shadow-xl">
+                    <div className="mb-3 flex items-center justify-between gap-3">
+                      <p className="text-xs font-semibold uppercase tracking-wide text-text-secondary">
+                        Categories
+                      </p>
+                      <button
+                        type="button"
+                        onClick={() => setSelectedCategories([])}
+                        className="text-xs font-medium text-accent transition hover:text-accent-dark"
+                      >
+                        Clear all
+                      </button>
+                    </div>
+                    <div className="flex flex-wrap gap-2">
+                      {categoryFilters.map((category) => {
+                        const active = selectedCategorySet.has(category);
+                        return (
+                          <button
+                            key={category}
+                            type="button"
+                            onClick={() =>
+                              setSelectedCategories((current) =>
+                                current.includes(category)
+                                  ? current.filter((item) => item !== category)
+                                  : [...current, category]
+                              )
+                            }
+                            className={`rounded-full border px-3 py-1.5 text-xs font-medium transition ${
+                              active
+                                ? "border-accent bg-accent text-white"
+                                : "border-slate-200 bg-white text-text-secondary hover:border-slate-300 hover:text-text"
+                            }`}
+                          >
+                            {category}
+                          </button>
+                        );
+                      })}
+                    </div>
                   </div>
-                  <div className="flex flex-wrap gap-2">
-                    {categoryFilters.map((category) => {
-                      const active = selectedCategorySet.has(category);
-                      return (
-                        <button
-                          key={category}
-                          type="button"
-                          onClick={() =>
-                            setSelectedCategories((current) =>
-                              current.includes(category)
-                                ? current.filter((item) => item !== category)
-                                : [...current, category]
-                            )
-                          }
-                          className={`rounded-full border px-3 py-1.5 text-xs font-medium transition ${
-                            active
-                              ? "border-accent bg-accent text-white"
-                              : "border-slate-200 bg-white text-text-secondary hover:border-slate-300 hover:text-text"
-                          }`}
-                        >
-                          {category}
-                        </button>
-                      );
-                    })}
+                ) : null}
+              </div>
+              <div className="relative" ref={sortMenuRef}>
+                <button
+                  type="button"
+                  onClick={() => setIsSortMenuOpen((open) => !open)}
+                  className="flex w-full items-center justify-between rounded-lg bg-bg-subtle px-3 py-2.5 text-left text-sm text-text outline-none transition hover:bg-bg"
+                >
+                  <span className="truncate">{sortOrderLabel}</span>
+                  <i
+                    className={`ri-arrow-down-s-line text-base text-text-secondary transition-transform ${
+                      isSortMenuOpen ? "rotate-180" : ""
+                    }`}
+                  />
+                </button>
+                {isSortMenuOpen ? (
+                  <div className="absolute left-0 right-0 top-[calc(100%+0.5rem)] z-20 rounded-xl border border-slate-200 bg-white p-2 shadow-xl">
+                    <div className="space-y-1">
+                      {sortOptions.map((option) => {
+                        const active = sortOrder === option.value;
+                        return (
+                          <button
+                            key={option.value}
+                            type="button"
+                            onClick={() => {
+                              setSortOrder(option.value);
+                              setIsSortMenuOpen(false);
+                            }}
+                            className={`flex w-full items-center justify-between rounded-lg px-3 py-2 text-sm transition ${
+                              active
+                                ? "bg-accent text-white"
+                                : "text-text-secondary hover:bg-bg-subtle hover:text-text"
+                            }`}
+                          >
+                            <span>{option.label}</span>
+                            {active ? <i className="ri-check-line text-base" /> : null}
+                          </button>
+                        );
+                      })}
+                    </div>
                   </div>
-                </div>
-              ) : null}
+                ) : null}
+              </div>
+              <div className="relative" ref={groupMenuRef}>
+                <button
+                  type="button"
+                  onClick={() => setIsGroupMenuOpen((open) => !open)}
+                  className="flex w-full items-center justify-between rounded-lg bg-bg-subtle px-3 py-2.5 text-left text-sm text-text outline-none transition hover:bg-bg"
+                >
+                  <span className="truncate">{groupByLabel}</span>
+                  <i
+                    className={`ri-arrow-down-s-line text-base text-text-secondary transition-transform ${
+                      isGroupMenuOpen ? "rotate-180" : ""
+                    }`}
+                  />
+                </button>
+                {isGroupMenuOpen ? (
+                  <div className="absolute left-0 right-0 top-[calc(100%+0.5rem)] z-20 rounded-xl border border-slate-200 bg-white p-2 shadow-xl">
+                    <div className="space-y-1">
+                      {groupOptions.map((option) => {
+                        const active = groupBy === option.value;
+                        return (
+                          <button
+                            key={option.value}
+                            type="button"
+                            onClick={() => {
+                              setGroupBy(option.value);
+                              setIsGroupMenuOpen(false);
+                            }}
+                            className={`flex w-full items-center justify-between rounded-lg px-3 py-2 text-sm transition ${
+                              active
+                                ? "bg-accent text-white"
+                                : "text-text-secondary hover:bg-bg-subtle hover:text-text"
+                            }`}
+                          >
+                            <span>{option.label}</span>
+                            {active ? <i className="ri-check-line text-base" /> : null}
+                          </button>
+                        );
+                      })}
+                    </div>
+                  </div>
+                ) : null}
+              </div>
             </div>
-            <div className="relative" ref={sortMenuRef}>
-              <button
-                type="button"
-                onClick={() => setIsSortMenuOpen((open) => !open)}
-                className="flex w-full items-center justify-between rounded-lg bg-bg-subtle px-3 py-2.5 text-left text-sm text-text outline-none transition hover:bg-bg"
-              >
-                <span className="truncate">{sortOrderLabel}</span>
-                <i
-                  className={`ri-arrow-down-s-line text-base text-text-secondary transition-transform ${
-                    isSortMenuOpen ? "rotate-180" : ""
-                  }`}
-                />
-              </button>
-              {isSortMenuOpen ? (
-                <div className="absolute left-0 right-0 top-[calc(100%+0.5rem)] z-20 rounded-xl border border-slate-200 bg-white p-2 shadow-xl">
-                  <div className="space-y-1">
-                    {sortOptions.map((option) => {
-                      const active = sortOrder === option.value;
-                      return (
-                        <button
-                          key={option.value}
-                          type="button"
-                          onClick={() => {
-                            setSortOrder(option.value);
-                            setIsSortMenuOpen(false);
-                          }}
-                          className={`flex w-full items-center justify-between rounded-lg px-3 py-2 text-sm transition ${
-                            active
-                              ? "bg-accent text-white"
-                              : "text-text-secondary hover:bg-bg-subtle hover:text-text"
-                          }`}
-                        >
-                          <span>{option.label}</span>
-                          {active ? <i className="ri-check-line text-base" /> : null}
-                        </button>
-                      );
-                    })}
-                  </div>
-                </div>
-              ) : null}
-            </div>
-            <div className="relative" ref={groupMenuRef}>
-              <button
-                type="button"
-                onClick={() => setIsGroupMenuOpen((open) => !open)}
-                className="flex w-full items-center justify-between rounded-lg bg-bg-subtle px-3 py-2.5 text-left text-sm text-text outline-none transition hover:bg-bg"
-              >
-                <span className="truncate">{groupByLabel}</span>
-                <i
-                  className={`ri-arrow-down-s-line text-base text-text-secondary transition-transform ${
-                    isGroupMenuOpen ? "rotate-180" : ""
-                  }`}
-                />
-              </button>
-              {isGroupMenuOpen ? (
-                <div className="absolute left-0 right-0 top-[calc(100%+0.5rem)] z-20 rounded-xl border border-slate-200 bg-white p-2 shadow-xl">
-                  <div className="space-y-1">
-                    {groupOptions.map((option) => {
-                      const active = groupBy === option.value;
-                      return (
-                        <button
-                          key={option.value}
-                          type="button"
-                          onClick={() => {
-                            setGroupBy(option.value);
-                            setIsGroupMenuOpen(false);
-                          }}
-                          className={`flex w-full items-center justify-between rounded-lg px-3 py-2 text-sm transition ${
-                            active
-                              ? "bg-accent text-white"
-                              : "text-text-secondary hover:bg-bg-subtle hover:text-text"
-                          }`}
-                        >
-                          <span>{option.label}</span>
-                          {active ? <i className="ri-check-line text-base" /> : null}
-                        </button>
-                      );
-                    })}
-                  </div>
-                </div>
-              ) : null}
-            </div>
+          </Card>
           </div>
-        </Card>
+        </div>
 
         {visibleRows.length === 0 ? (
           <EmptyState title="No matching transactions" body="Adjust the filters or search to see more records." />
