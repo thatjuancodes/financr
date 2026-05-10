@@ -7,17 +7,18 @@ import { EmptyState, LoadingState } from "@/components/feature/PageState";
 import { useFinanceData } from "@/contexts/FinanceDataContext";
 import { formatCurrency } from "@/lib/finance";
 import { AutomationContent } from "@/pages/automation/page";
+import DebtSettingsSection from "@/pages/settings/components/DebtSettingsSection";
 import { CATEGORY_COLOR_SWATCHES, buildCategoryBadgeStyle, resolveCategoryColor } from "@/utils/categoryColors";
 import type { CategoryRecord } from "@/types/finance";
 
-type SettingsTab = "accounts" | "categories" | "budgets" | "automation" | "app";
+type SettingsTab = "accounts" | "categories" | "budgets" | "debts" | "automation" | "app";
 type CategoryDraft = {
   name: string;
   color: string | null;
   icon: string | null;
 };
 
-const SETTINGS_TABS: SettingsTab[] = ["accounts", "categories", "budgets", "automation", "app"];
+const SETTINGS_TABS: SettingsTab[] = ["accounts", "categories", "budgets", "debts", "automation", "app"];
 
 const accountTypes = ["bank", "cash", "ewallet", "credit"];
 const entityTypes = ["personal", "family", "business"];
@@ -72,6 +73,7 @@ export default function Settings() {
     createCategory,
     createEntity,
     createIncomeCategory,
+    deleteLoanOriginConfig,
     deleteAccount,
     deleteBudget,
     deleteCategory,
@@ -79,7 +81,9 @@ export default function Settings() {
     deleteIncomeCategory,
     entities,
     incomeCategories,
+    loanOriginConfigs,
     loading,
+    saveLoanOriginConfig,
     setCurrency,
     settings,
     updateCategory,
@@ -658,6 +662,14 @@ export default function Settings() {
               ))
             )}
           </div>
+        ) : null}
+
+        {tab === "debts" ? (
+          <DebtSettingsSection
+            loanOriginConfigs={loanOriginConfigs}
+            onDeleteConfig={deleteLoanOriginConfig}
+            onSaveConfig={saveLoanOriginConfig}
+          />
         ) : null}
 
         {tab === "automation" ? <AutomationContent showHeader={false} /> : null}

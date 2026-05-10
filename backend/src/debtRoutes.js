@@ -15,9 +15,66 @@ function registerDebtRoutes(app, deps) {
     pickCategoryColor,
     pickCsvValue,
     resolveWriteEntityId,
+    resolveEntityDefaultAccountId,
     normalizeCsvHeader,
     isCsvRowEmpty,
   } = deps;
+
+  async function resolveExpensePostingAccountId(rawAccountId, entityId) {
+    if (rawAccountId !== undefined && rawAccountId !== null && rawAccountId !== "") {
+      const parsedAccountId = Number(rawAccountId);
+      if (!Number.isInteger(parsedAccountId) || parsedAccountId <= 0) {
+        return { error: "Invalid account selection" };
+      }
+      const account = await get(
+        "SELECT id, entity_id FROM accounts WHERE id = ? LIMIT 1",
+        [parsedAccountId]
+      );
+      if (!account || String(account.entity_id || "") !== String(entityId || "")) {
+        return { error: "Selected account does not belong to the entity" };
+      }
+      return { accountId: parsedAccountId };
+    }
+
+    const fallbackAccountId = await resolveEntityDefaultAccountId({
+      get,
+      all,
+      entityId,
+      kind: "expense",
+    });
+    return { accountId: fallbackAccountId };
+  }
+
+  async function getOutstandingDebtTotal({ loanOrigin, entityId, statementMonth = null }) {
+    if (statementMonth) {
+      const totalRow = await get(
+        `
+        SELECT COALESCE(SUM(d.amount), 0) AS total
+        FROM debts d
+        LEFT JOIN loan_origin_configs cfg ON cfg.loan_origin = d.loan_origin
+        WHERE d.loan_origin = ?
+          AND d.entity_id = ?
+          AND COALESCE(
+            NULLIF(TRIM(d.statement_month), ''),
+            CASE
+              WHEN cfg.statement_day IS NOT NULL
+                AND CAST(SUBSTR(d.spent_at, 9, 2) AS INTEGER) >= cfg.statement_day
+              THEN STRFTIME('%Y-%m', DATE(d.spent_at, 'start of month', '+1 month'))
+              ELSE SUBSTR(d.spent_at, 1, 7)
+            END
+          ) = ?
+        `,
+        [loanOrigin, entityId, statementMonth]
+      );
+      return Number(totalRow?.total ?? 0);
+    }
+
+    const totalRow = await get(
+      "SELECT COALESCE(SUM(amount), 0) AS total FROM debts WHERE loan_origin = ? AND entity_id = ?",
+      [loanOrigin, entityId]
+    );
+    return Number(totalRow?.total ?? 0);
+  }
 
   app.get("/debts", async (req, res) => {
     const filterActive = hasEntityFilter(req.query);
@@ -426,8 +483,10 @@ function registerDebtRoutes(app, deps) {
         ? req.body.statement_month.trim()
         : "";
     const statementMonth = statementMonthRaw || paymentDate.slice(0, 7);
+    const outstandingScopeMonth = statementMonthRaw || null;
     const parsedAmount = Number(req.body?.amount);
     const requestedEntityId = normalizeEntityId(req.body?.entity_id);
+    const requestedFromAccountId = req.body?.from_account_id;
 
     if (
       !loanOrigin ||
@@ -444,19 +503,30 @@ function registerDebtRoutes(app, deps) {
       if (!resolvedEntityId) {
         return res.status(400).json({ error: "Invalid debt payoff payload" });
       }
-      const totalRow = await get(
-        "SELECT COALESCE(SUM(amount), 0) AS total FROM debts WHERE loan_origin = ? AND entity_id = ?",
-        [loanOrigin, resolvedEntityId]
+      const postingAccount = await resolveExpensePostingAccountId(
+        requestedFromAccountId,
+        resolvedEntityId
       );
-      const outstandingTotal = Number(totalRow?.total ?? 0);
+      if (postingAccount.error) {
+        return res.status(400).json({ error: postingAccount.error });
+      }
+      const outstandingTotal = await getOutstandingDebtTotal({
+        loanOrigin,
+        entityId: resolvedEntityId,
+        statementMonth: outstandingScopeMonth,
+      });
       if (outstandingTotal <= 0) {
         return res.status(400).json({
-          error: `No outstanding debt balance for ${loanOrigin}`,
+          error: outstandingScopeMonth
+            ? `No outstanding debt balance for ${loanOrigin} in ${outstandingScopeMonth}`
+            : `No outstanding debt balance for ${loanOrigin}`,
         });
       }
       if (parsedAmount > outstandingTotal) {
         return res.status(400).json({
-          error: `Payoff amount exceeds outstanding balance for ${loanOrigin}`,
+          error: outstandingScopeMonth
+            ? `Payoff amount exceeds outstanding balance for ${loanOrigin} in ${outstandingScopeMonth}`
+            : `Payoff amount exceeds outstanding balance for ${loanOrigin}`,
         });
       }
 
@@ -465,7 +535,7 @@ function registerDebtRoutes(app, deps) {
       const paymentAmount = Number(parsedAmount.toFixed(2));
 
       const expenseResult = await run(
-        "INSERT INTO expenses (amount, category, notes, spent_at, created_at, expense_category_id, entity_id) VALUES (?, ?, ?, ?, ?, ?, ?)",
+        "INSERT INTO expenses (amount, category, notes, spent_at, created_at, expense_category_id, entity_id, from_account_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
         [
           paymentAmount,
           expenseName,
@@ -474,6 +544,7 @@ function registerDebtRoutes(app, deps) {
           createdAt,
           null,
           resolvedEntityId,
+          postingAccount.accountId,
         ]
       );
 
@@ -510,11 +581,14 @@ function registerDebtRoutes(app, deps) {
           e.notes,
           e.spent_at,
           e.created_at,
+          e.from_account_id,
+          a.name AS from_account_name,
           e.expense_category_id,
           e.expense_expectation,
           c.name AS expense_category_name
         FROM expenses e
         LEFT JOIN entities ent ON e.entity_id = ent.id
+        LEFT JOIN accounts a ON e.from_account_id = a.id
         LEFT JOIN categories c ON e.expense_category_id = c.id
         WHERE e.id = ?
         `,

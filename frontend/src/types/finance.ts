@@ -95,6 +95,13 @@ export interface DebtRecord {
   debt_category_name?: string | null;
 }
 
+export interface LoanOriginConfigRecord {
+  loan_origin: string;
+  statement_day?: number | null;
+  due_day?: number | null;
+  debt_count?: number | null;
+}
+
 export interface RecurringItemRecord {
   id: number;
   type: RecurringType;

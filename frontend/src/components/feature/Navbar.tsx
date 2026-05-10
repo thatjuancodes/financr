@@ -16,7 +16,8 @@ export default function Navbar() {
   const location = useLocation();
   const [scrolled, setScrolled] = useState(false);
   const [mobileOpen, setMobileOpen] = useState(false);
-  const { selectedEntityId, entities } = useFinanceData();
+  const [hiddenByTransactionsFilter, setHiddenByTransactionsFilter] = useState(false);
+  const { pendingRecurringItems, selectedEntityId, entities } = useFinanceData();
 
   useEffect(() => {
     const handleScroll = () => {
@@ -26,12 +27,41 @@ export default function Navbar() {
     return () => window.removeEventListener("scroll", handleScroll);
   }, []);
 
+  useEffect(() => {
+    function handleTransactionsFilterDockedChange(event: Event) {
+      const customEvent = event as CustomEvent<{ docked?: boolean }>;
+      setHiddenByTransactionsFilter(
+        location.pathname === "/transactions" && Boolean(customEvent.detail?.docked)
+      );
+    }
+
+    window.addEventListener(
+      "transactions-filter-docked-change",
+      handleTransactionsFilterDockedChange as EventListener
+    );
+
+    if (location.pathname !== "/transactions") {
+      setHiddenByTransactionsFilter(false);
+    }
+
+    return () => {
+      window.removeEventListener(
+        "transactions-filter-docked-change",
+        handleTransactionsFilterDockedChange as EventListener
+      );
+    };
+  }, [location.pathname]);
+
   const activeEntity =
     entities.find((entity) => entity.id === selectedEntityId)?.name || "All entities";
+  const notificationCount = pendingRecurringItems.length;
+  const notificationsActive = location.pathname === "/notifications";
 
   return (
     <header
       className={`fixed top-0 left-0 right-0 z-50 transition-all duration-300 ${
+        hiddenByTransactionsFilter ? "-translate-y-full pointer-events-none" : "translate-y-0"
+      } ${
         scrolled
           ? "bg-white shadow-nav border-b border-bg-subtle"
           : "bg-transparent"
@@ -71,10 +101,23 @@ export default function Navbar() {
         </nav>
 
         <div className="flex items-center gap-3">
+          <Link
+            to="/notifications"
+            className={`relative flex h-10 w-10 items-center justify-center rounded-full transition-colors ${
+              notificationsActive
+                ? "bg-accent-light text-accent-dark"
+                : "text-text-secondary hover:bg-bg-subtle hover:text-text"
+            }`}
+            aria-label={`Notifications${notificationCount ? ` (${notificationCount})` : ""}`}
+          >
+            <i className="ri-notification-3-line text-lg" />
+            {notificationCount > 0 ? (
+              <span className="absolute right-1.5 top-1.5 inline-flex min-w-[1.1rem] items-center justify-center rounded-full bg-negative px-1 text-[10px] font-semibold leading-4 text-white">
+                {notificationCount > 99 ? "99+" : notificationCount}
+              </span>
+            ) : null}
+          </Link>
           <EntitySwitcher />
-          <div className="hidden md:flex w-8 h-8 rounded-full bg-accent-light items-center justify-center">
-            <span className="text-xs font-semibold text-accent-dark">JD</span>
-          </div>
           <button
             className="md:hidden w-8 h-8 flex items-center justify-center"
             onClick={() => setMobileOpen(!mobileOpen)}

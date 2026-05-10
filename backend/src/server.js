@@ -1993,6 +1993,7 @@ registerDebtRoutes(app, {
   pickCategoryColor,
   pickCsvValue,
   resolveWriteEntityId,
+  resolveEntityDefaultAccountId,
   normalizeCsvHeader,
   isCsvRowEmpty,
 });

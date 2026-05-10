@@ -14,6 +14,7 @@ import type {
   EntityRecord,
   ExpenseRecord,
   IncomeRecord,
+  LoanOriginConfigRecord,
   ProjectionScenarioDetail,
   ProjectionScenarioRecord,
   RecurringItemRecord,
@@ -36,6 +37,7 @@ type FinanceContextValue = {
   incomeList: IncomeRecord[];
   expenseList: ExpenseRecord[];
   debtList: DebtRecord[];
+  loanOriginConfigs: LoanOriginConfigRecord[];
   transactions: TransactionRecord[];
   recurringItems: RecurringItemRecord[];
   pendingRecurringItems: RecurringItemRecord[];
@@ -51,6 +53,23 @@ type FinanceContextValue = {
   deleteEntity: (id: string) => Promise<void>;
   createAccount: (payload: Record<string, unknown>) => Promise<void>;
   deleteAccount: (id: number) => Promise<void>;
+  createIncome: (payload: Record<string, unknown>) => Promise<void>;
+  updateIncome: (id: number, payload: Record<string, unknown>) => Promise<void>;
+  deleteIncome: (id: number) => Promise<void>;
+  createExpense: (payload: Record<string, unknown>) => Promise<void>;
+  updateExpense: (id: number, payload: Record<string, unknown>) => Promise<void>;
+  deleteExpense: (id: number) => Promise<void>;
+  createTransfer: (payload: Record<string, unknown>) => Promise<void>;
+  updateTransfer: (id: string | number, payload: Record<string, unknown>) => Promise<void>;
+  deleteTransfer: (id: string | number, params?: Record<string, unknown>) => Promise<void>;
+  createDebt: (payload: Record<string, unknown>) => Promise<void>;
+  updateDebt: (id: number, payload: Record<string, unknown>) => Promise<void>;
+  deleteDebt: (id: number) => Promise<void>;
+  payoffDebtByOrigin: (payload: Record<string, unknown>) => Promise<void>;
+  updateTransaction: (id: string | number, payload: Record<string, unknown>) => Promise<void>;
+  deleteTransaction: (id: string | number) => Promise<void>;
+  saveLoanOriginConfig: (payload: Record<string, unknown>) => Promise<void>;
+  deleteLoanOriginConfig: (loanOrigin: string) => Promise<void>;
   createCategory: (payload: { name: string; color?: string | null; icon?: string | null }) => Promise<void>;
   updateCategory: (id: number, payload: { name?: string; color?: string | null; icon?: string | null }) => Promise<void>;
   deleteCategory: (id: number) => Promise<void>;
@@ -93,6 +112,7 @@ export function FinanceDataProvider({ children }: { children: React.ReactNode })
   const [incomeList, setIncomeList] = React.useState<IncomeRecord[]>([]);
   const [expenseList, setExpenseList] = React.useState<ExpenseRecord[]>([]);
   const [debtList, setDebtList] = React.useState<DebtRecord[]>([]);
+  const [loanOriginConfigs, setLoanOriginConfigs] = React.useState<LoanOriginConfigRecord[]>([]);
   const [transactions, setTransactions] = React.useState<TransactionRecord[]>([]);
   const [recurringItems, setRecurringItems] = React.useState<RecurringItemRecord[]>([]);
   const [pendingRecurringItems, setPendingRecurringItems] = React.useState<RecurringItemRecord[]>([]);
@@ -122,6 +142,7 @@ export function FinanceDataProvider({ children }: { children: React.ReactNode })
         nextIncomeList,
         nextExpenseList,
         nextDebts,
+        nextLoanOriginConfigs,
         nextTransactions,
         nextRecurringItems,
         nextPendingRecurringItems,
@@ -137,6 +158,7 @@ export function FinanceDataProvider({ children }: { children: React.ReactNode })
         api.getIncome(entityId ? { entity_id: entityId } : {}),
         api.getExpenses(entityId ? { entity_id: entityId } : {}),
         api.getDebts(entityId ? { entity_id: entityId } : {}),
+        api.getLoanOriginConfigs(entityId ? { entity_id: entityId } : {}),
         api.getTransactions(),
         api.getRecurringItems(entityId ? { entity_id: entityId } : {}),
         api.getPendingRecurringItems(entityId ? { entity_id: entityId } : {}),
@@ -157,6 +179,7 @@ export function FinanceDataProvider({ children }: { children: React.ReactNode })
       setIncomeList(nextIncomeList);
       setExpenseList(nextExpenseList);
       setDebtList(nextDebts);
+      setLoanOriginConfigs(nextLoanOriginConfigs);
       setTransactions(nextTransactions);
       setRecurringItems(nextRecurringItems);
       setPendingRecurringItems(nextPendingRecurringItems);
@@ -200,6 +223,7 @@ export function FinanceDataProvider({ children }: { children: React.ReactNode })
     incomeList,
     expenseList,
     debtList,
+    loanOriginConfigs,
     transactions,
     recurringItems,
     pendingRecurringItems,
@@ -220,6 +244,31 @@ export function FinanceDataProvider({ children }: { children: React.ReactNode })
     },
     createAccount: (payload) => runMutation(() => api.createAccount(payload), "Account created"),
     deleteAccount: (id) => runMutation(() => api.deleteAccount(id), "Account deleted"),
+    createIncome: (payload) => runMutation(() => api.addIncome(payload), "Income created"),
+    updateIncome: (id, payload) => runMutation(() => api.updateIncome(id, payload), "Income updated"),
+    deleteIncome: (id) => runMutation(() => api.deleteIncome(id), "Income deleted"),
+    createExpense: (payload) => runMutation(() => api.addExpense(payload), "Expense created"),
+    updateExpense: (id, payload) =>
+      runMutation(() => api.updateExpense(id, payload), "Expense updated"),
+    deleteExpense: (id) => runMutation(() => api.deleteExpense(id), "Expense deleted"),
+    createTransfer: (payload) => runMutation(() => api.createTransfer(payload), "Transfer created"),
+    updateTransfer: (id, payload) =>
+      runMutation(() => api.updateTransfer(id, payload), "Transfer updated"),
+    deleteTransfer: (id, params = {}) =>
+      runMutation(() => api.deleteTransfer(id, params), "Transfer deleted"),
+    createDebt: (payload) => runMutation(() => api.addDebt(payload), "Debt created"),
+    updateDebt: (id, payload) => runMutation(() => api.updateDebt(id, payload), "Debt updated"),
+    deleteDebt: (id) => runMutation(() => api.deleteDebt(id), "Debt deleted"),
+    payoffDebtByOrigin: (payload) =>
+      runMutation(() => api.payoffDebtByOrigin(payload), "Debt payment recorded"),
+    updateTransaction: (id, payload) =>
+      runMutation(() => api.updateTransaction(id, payload), "Transaction updated"),
+    deleteTransaction: (id) =>
+      runMutation(() => api.deleteTransaction(id), "Transaction deleted"),
+    saveLoanOriginConfig: (payload) =>
+      runMutation(() => api.saveLoanOriginConfig(payload), "Debt statement settings saved"),
+    deleteLoanOriginConfig: (loanOrigin) =>
+      runMutation(() => api.deleteLoanOriginConfig(loanOrigin), "Debt statement settings deleted"),
     createCategory: (payload) => runMutation(() => api.addCategory(payload), "Expense category created"),
     updateCategory: (id, payload) =>
       runMutation(() => api.updateCategory(id, payload), "Expense category updated"),
@@ -261,6 +310,7 @@ export function FinanceDataProvider({ children }: { children: React.ReactNode })
     incomeList,
     incomeCategories,
     loading,
+    loanOriginConfigs,
     notice,
     pendingRecurringItems,
     projectionScenarios,

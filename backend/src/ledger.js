@@ -1831,6 +1831,144 @@ function registerLedgerRoutes(app, { run, get, all }) {
     }
   });
 
+  app.put("/transfers/:id", async (req, res) => {
+    const transferId = normalizeText(req.params.id);
+    if (!transferId) {
+      return res.status(400).json({ error: "Invalid transfer id" });
+    }
+
+    let feeExpenseId = null;
+    let bookkeepingExpenseId = null;
+    let bookkeepingIncomeId = null;
+    try {
+      const existingTransfer = await getTransferById(get, transferId);
+      if (!existingTransfer) {
+        return res.status(404).json({ error: "Transfer not found" });
+      }
+
+      const resolved = await resolveTransferPayload({
+        body: req.body,
+        get,
+        all,
+        existingTransfer,
+      });
+      if (resolved.error) {
+        return res.status(400).json({ error: resolved.error });
+      }
+
+      const {
+        fromAccountId,
+        toAccountId,
+        amountCents,
+        transferFeeCents,
+        transferDate,
+        notes,
+        fromAccount,
+        toAccount,
+      } = resolved.payload;
+      const isCrossEntity =
+        String(fromAccount.entity_id || "") !== String(toAccount.entity_id || "");
+      const resolvedBookkeeping = await resolveTransferBookkeepingPayload({
+        body: req.body,
+        get,
+        isCrossEntity,
+      });
+      if (resolvedBookkeeping.error) {
+        return res.status(400).json({ error: resolvedBookkeeping.error });
+      }
+
+      feeExpenseId =
+        transferFeeCents > 0
+          ? await createTransferFeeExpense({
+              get,
+              run,
+              amountCents: transferFeeCents,
+              spentAt: transferDate.slice(0, 10),
+              entityId: fromAccount.entity_id,
+              fromAccountId,
+              transferId,
+            })
+          : null;
+      if (resolvedBookkeeping.payload.mirrorAsIncomeExpense) {
+        const bookkeepingRows = await createTransferBookkeepingRows({
+          run,
+          amountCents,
+          transferDate,
+          notes,
+          fromAccount,
+          toAccount,
+          expenseCategoryId: resolvedBookkeeping.payload.expenseCategoryId,
+          incomeCategoryId: resolvedBookkeeping.payload.incomeCategoryId,
+        });
+        bookkeepingExpenseId = bookkeepingRows.bookkeepingExpenseId;
+        bookkeepingIncomeId = bookkeepingRows.bookkeepingIncomeId;
+      }
+
+      await run(
+        `
+        UPDATE transfers
+        SET
+          from_account_id = ?,
+          to_account_id = ?,
+          amount_cents = ?,
+          transfer_fee_cents = ?,
+          fee_expense_id = ?,
+          mirror_as_income_expense = ?,
+          expense_category_id = ?,
+          income_category_id = ?,
+          bookkeeping_expense_id = ?,
+          bookkeeping_income_id = ?,
+          transfer_date = ?,
+          notes = ?,
+          updated_at = ?
+        WHERE id = ?
+        `,
+        [
+          fromAccountId,
+          toAccountId,
+          amountCents,
+          transferFeeCents,
+          feeExpenseId,
+          resolvedBookkeeping.payload.mirrorAsIncomeExpense ? 1 : 0,
+          resolvedBookkeeping.payload.expenseCategoryId,
+          resolvedBookkeeping.payload.incomeCategoryId,
+          bookkeepingExpenseId,
+          bookkeepingIncomeId,
+          transferDate,
+          notes,
+          new Date().toISOString(),
+          transferId,
+        ]
+      );
+
+      if (existingTransfer.fee_expense_id) {
+        await run("DELETE FROM expenses WHERE id = ?", [existingTransfer.fee_expense_id]);
+      }
+      if (existingTransfer.bookkeeping_expense_id) {
+        await run("DELETE FROM expenses WHERE id = ?", [
+          existingTransfer.bookkeeping_expense_id,
+        ]);
+      }
+      if (existingTransfer.bookkeeping_income_id) {
+        await run("DELETE FROM income WHERE id = ?", [existingTransfer.bookkeeping_income_id]);
+      }
+
+      const row = await getTransferById(get, transferId);
+      res.json(serializeTransferRow(row));
+    } catch (err) {
+      if (bookkeepingIncomeId) {
+        await run("DELETE FROM income WHERE id = ?", [bookkeepingIncomeId]);
+      }
+      if (bookkeepingExpenseId) {
+        await run("DELETE FROM expenses WHERE id = ?", [bookkeepingExpenseId]);
+      }
+      if (feeExpenseId) {
+        await run("DELETE FROM expenses WHERE id = ?", [feeExpenseId]);
+      }
+      res.status(500).json({ error: "Failed to update transfer" });
+    }
+  });
+
   app.delete("/transfers/:id", async (req, res) => {
     const transferId = normalizeText(req.params.id);
     const sourceType = normalizeText(req.query?.source_type);
@@ -2229,7 +2367,9 @@ function registerLedgerRoutes(app, { run, get, all }) {
 
       const shouldIncludeLegacyIncome = !type || type === "income";
       const shouldIncludeLegacyExpense = !type || type === "expense";
+      const shouldIncludeTransfers = !type || type === "transfer";
       const legacyPromises = [];
+      const supplementalPromises = [];
 
       if (shouldIncludeLegacyIncome) {
         const incomeConditions = [
@@ -2334,13 +2474,74 @@ function registerLedgerRoutes(app, { run, get, all }) {
         );
       }
 
-      const [transactionRows, ...legacyRowGroups] = await Promise.all([
+      if (shouldIncludeTransfers) {
+        const transferConditions = [];
+        const transferParams = [];
+
+        if (accountId) {
+          transferConditions.push("(tr.from_account_id = ? OR tr.to_account_id = ?)");
+          transferParams.push(accountId, accountId);
+        }
+        if (dateFrom) {
+          transferConditions.push("substr(tr.transfer_date, 1, 10) >= ?");
+          transferParams.push(dateFrom);
+        }
+        if (dateTo) {
+          transferConditions.push("substr(tr.transfer_date, 1, 10) <= ?");
+          transferParams.push(dateTo);
+        }
+
+        const transferWhereClause = transferConditions.length
+          ? `WHERE ${transferConditions.join(" AND ")}`
+          : "";
+
+        supplementalPromises.push(
+          all(
+            `
+            SELECT
+              tr.id,
+              'transfer' AS source_type,
+              'transfer' AS type,
+              tr.amount_cents,
+              tr.from_account_id,
+              tr.to_account_id,
+              COALESCE(ic.name, ec.name, 'Transfer') AS category,
+              COALESCE(
+                tr.notes,
+                from_account.name || ' -> ' || to_account.name,
+                'Transfer'
+              ) AS note,
+              tr.transfer_date AS created_at,
+              from_account.name AS from_account_name,
+              from_account.entity_id AS from_entity_id,
+              from_entity.name AS from_entity_name,
+              to_account.name AS to_account_name,
+              to_account.entity_id AS to_entity_id,
+              to_entity.name AS to_entity_name,
+              from_account.currency_code AS currency_code
+            FROM transfers tr
+            INNER JOIN accounts from_account ON from_account.id = tr.from_account_id
+            INNER JOIN entities from_entity ON from_entity.id = from_account.entity_id
+            INNER JOIN accounts to_account ON to_account.id = tr.to_account_id
+            INNER JOIN entities to_entity ON to_entity.id = to_account.entity_id
+            LEFT JOIN categories ec ON ec.id = tr.expense_category_id
+            LEFT JOIN income_categories ic ON ic.id = tr.income_category_id
+            ${transferWhereClause}
+            ORDER BY tr.transfer_date DESC, tr.id DESC
+            `,
+            transferParams
+          )
+        );
+      }
+
+      const [transactionRows, ...rowGroups] = await Promise.all([
         transactionPromise,
+        ...supplementalPromises,
         ...legacyPromises,
       ]);
       const rows = [
         ...(Array.isArray(transactionRows) ? transactionRows : []),
-        ...legacyRowGroups.flatMap((group) => (Array.isArray(group) ? group : [])),
+        ...rowGroups.flatMap((group) => (Array.isArray(group) ? group : [])),
       ].sort((left, right) => {
         const createdAtCompare = String(right?.created_at || "").localeCompare(
           String(left?.created_at || "")

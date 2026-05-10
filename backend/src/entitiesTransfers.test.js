@@ -619,6 +619,155 @@ test("transfer fee creates a bank fee expense and is reversed when transfer is d
   assertMoneyEqual(accountsAfter.get(bank.id).balance, 0);
 });
 
+test("transfer updates replace fee bookkeeping and refresh the transactions feed", async () => {
+  const entitiesByType = await getEntitiesByType();
+  const personalEntityId = entitiesByType.get("personal").id;
+
+  const cash = await createAccount({
+    name: randomName("transfer-update-cash"),
+    type: "cash",
+    entityId: personalEntityId,
+    currencyCode: "PHP",
+  });
+  const bank = await createAccount({
+    name: randomName("transfer-update-bank"),
+    type: "bank",
+    entityId: personalEntityId,
+    currencyCode: "PHP",
+  });
+
+  let response = await request("/transactions", {
+    method: "POST",
+    body: {
+      type: "income",
+      amount: 500,
+      to_account_id: cash.id,
+      created_at: "2026-04-12",
+      note: "seed transfer update cash",
+    },
+  });
+  assert.equal(response.status, 201, JSON.stringify(response.data));
+
+  response = await request("/transfers", {
+    method: "POST",
+    body: {
+      from_account_id: cash.id,
+      to_account_id: bank.id,
+      amount: 200,
+      transfer_fee_amount: 25,
+      date: "2026-04-13",
+      notes: "transfer before edit",
+    },
+  });
+  assert.equal(response.status, 201, JSON.stringify(response.data));
+  const transferId = String(response.data.id);
+  const initialFeeExpenseId = Number(response.data.fee_expense_id);
+  assert.ok(initialFeeExpenseId > 0, "Expected original fee expense row");
+
+  response = await request(`/transfers/${encodeURIComponent(transferId)}`, {
+    method: "PUT",
+    body: {
+      from_account_id: cash.id,
+      to_account_id: bank.id,
+      amount: 150,
+      transfer_fee_amount: 10,
+      date: "2026-04-15",
+      notes: "transfer after edit",
+    },
+  });
+  assert.equal(response.status, 200, JSON.stringify(response.data));
+  assert.equal(response.data.amount, 150);
+  assert.equal(response.data.transfer_fee_amount, 10);
+  assert.equal(response.data.notes, "transfer after edit");
+  assert.notEqual(Number(response.data.fee_expense_id), initialFeeExpenseId);
+
+  const accountsAfter = await getAccountsById();
+  assertMoneyEqual(accountsAfter.get(cash.id).balance, 340);
+  assertMoneyEqual(accountsAfter.get(bank.id).balance, 150);
+
+  const expenses = await request(
+    `/expenses?entity_id=${encodeURIComponent(personalEntityId)}`
+  );
+  assert.equal(expenses.status, 200, JSON.stringify(expenses.data));
+  assert.equal(
+    (expenses.data || []).some((item) => Number(item.id) === initialFeeExpenseId),
+    false,
+    "Expected original fee expense row to be removed"
+  );
+  const updatedFeeExpense = (expenses.data || []).find(
+    (item) =>
+      Number(item.id) === Number(response.data.fee_expense_id) &&
+      Number(item.amount) === 10 &&
+      item.from_account_id === cash.id &&
+      String(item.spent_at).slice(0, 10) === "2026-04-15"
+  );
+  assert.ok(updatedFeeExpense, "Expected updated transfer fee expense row");
+
+  const transactions = await request("/transactions");
+  assert.equal(transactions.status, 200, JSON.stringify(transactions.data));
+  const transferRow = (transactions.data || []).find(
+    (item) => item.source_type === "transfer" && String(item.id) === transferId
+  );
+  assert.ok(transferRow, "Expected updated transfer row in transactions feed");
+  assert.equal(transferRow.amount, 150);
+  assert.equal(String(transferRow.created_at).slice(0, 10), "2026-04-15");
+  assert.equal(transferRow.note, "transfer after edit");
+});
+
+test("transactions feed includes modern transfer rows", async () => {
+  const entitiesByType = await getEntitiesByType();
+  const personalEntityId = entitiesByType.get("personal").id;
+
+  const fromAccount = await createAccount({
+    name: randomName("transactions-feed-transfer-from"),
+    type: "cash",
+    entityId: personalEntityId,
+    currencyCode: "PHP",
+  });
+  const toAccount = await createAccount({
+    name: randomName("transactions-feed-transfer-to"),
+    type: "bank",
+    entityId: personalEntityId,
+    currencyCode: "PHP",
+  });
+
+  let response = await request("/transactions", {
+    method: "POST",
+    body: {
+      type: "income",
+      amount: 600,
+      to_account_id: fromAccount.id,
+      created_at: "2026-04-18",
+      note: "seed transfer feed balance",
+    },
+  });
+  assert.equal(response.status, 201, JSON.stringify(response.data));
+
+  response = await request("/transfers", {
+    method: "POST",
+    body: {
+      from_account_id: fromAccount.id,
+      to_account_id: toAccount.id,
+      amount: 250,
+      date: "2026-04-19",
+      notes: "modern transfer in transactions feed",
+    },
+  });
+  assert.equal(response.status, 201, JSON.stringify(response.data));
+  const transferId = String(response.data.id);
+
+  response = await request("/transactions");
+  assert.equal(response.status, 200, JSON.stringify(response.data));
+  const transferRow = (response.data || []).find(
+    (item) => item.source_type === "transfer" && String(item.id) === transferId
+  );
+  assert.ok(transferRow, "Expected modern transfer row in transactions feed");
+  assert.equal(transferRow.type, "transfer");
+  assert.equal(transferRow.from_account_id, fromAccount.id);
+  assert.equal(transferRow.to_account_id, toAccount.id);
+  assert.equal(String(transferRow.created_at).slice(0, 10), "2026-04-19");
+});
+
 test("entity CRUD supports multiple business entities", async () => {
   const businessA = await createEntity({
     name: randomName("biz-entity-a"),
@@ -1340,6 +1489,146 @@ test("editing expense account moves the deduction to the selected account", asyn
   accountsAfter = await getAccountsById();
   assertMoneyEqual(accountsAfter.get(primaryAccount.id).balance, 1000);
   assertMoneyEqual(accountsAfter.get(secondaryAccount.id).balance, 400);
+});
+
+test("debt payoff validates against the selected statement cycle", async () => {
+  const entity = await createEntity({
+    name: randomName("debt-cycle-entity"),
+    type: "personal",
+  });
+  const account = await createAccount({
+    name: randomName("debt-cycle-account"),
+    entityId: entity.id,
+    type: "cash",
+  });
+  const loanOrigin = randomName("debt-cycle-origin");
+
+  let response = await request("/loan-origin-configs", {
+    method: "PUT",
+    body: {
+      loan_origin: loanOrigin,
+      statement_day: 16,
+      due_day: 10,
+    },
+  });
+  assert.equal(response.status, 200, JSON.stringify(response.data));
+
+  response = await request("/debts", {
+    method: "POST",
+    body: {
+      amount: 100,
+      name: "debt-cycle-mar-20",
+      loan_origin: loanOrigin,
+      spent_at: "2026-03-20",
+      entity_id: entity.id,
+    },
+  });
+  assert.equal(response.status, 201, JSON.stringify(response.data));
+
+  response = await request("/debts", {
+    method: "POST",
+    body: {
+      amount: 50,
+      name: "debt-cycle-apr-05",
+      loan_origin: loanOrigin,
+      spent_at: "2026-04-05",
+      entity_id: entity.id,
+    },
+  });
+  assert.equal(response.status, 201, JSON.stringify(response.data));
+
+  response = await request("/debts", {
+    method: "POST",
+    body: {
+      amount: 30,
+      name: "debt-cycle-apr-20",
+      loan_origin: loanOrigin,
+      spent_at: "2026-04-20",
+      entity_id: entity.id,
+    },
+  });
+  assert.equal(response.status, 201, JSON.stringify(response.data));
+
+  response = await request("/debts/payoff", {
+    method: "POST",
+    body: {
+      amount: 160,
+      loan_origin: loanOrigin,
+      statement_month: "2026-04",
+      payment_date: "2026-04-10",
+      entity_id: entity.id,
+      from_account_id: account.id,
+    },
+  });
+  assert.equal(response.status, 400, JSON.stringify(response.data));
+  assert.match(String(response.data?.error || ""), /2026-04/);
+});
+
+test("debt payoff creates an expense on the selected account", async () => {
+  const entity = await createEntity({
+    name: randomName("debt-payoff-entity"),
+    type: "personal",
+  });
+  const account = await createAccount({
+    name: randomName("debt-payoff-account"),
+    entityId: entity.id,
+    type: "cash",
+  });
+  const loanOrigin = randomName("debt-payoff-origin");
+
+  let response = await request("/loan-origin-configs", {
+    method: "PUT",
+    body: {
+      loan_origin: loanOrigin,
+      statement_day: 16,
+      due_day: 10,
+    },
+  });
+  assert.equal(response.status, 200, JSON.stringify(response.data));
+
+  response = await request("/debts", {
+    method: "POST",
+    body: {
+      amount: 100,
+      name: "debt-payoff-mar-20",
+      loan_origin: loanOrigin,
+      spent_at: "2026-03-20",
+      entity_id: entity.id,
+    },
+  });
+  assert.equal(response.status, 201, JSON.stringify(response.data));
+
+  response = await request("/debts", {
+    method: "POST",
+    body: {
+      amount: 50,
+      name: "debt-payoff-apr-05",
+      loan_origin: loanOrigin,
+      spent_at: "2026-04-05",
+      entity_id: entity.id,
+    },
+  });
+  assert.equal(response.status, 201, JSON.stringify(response.data));
+
+  response = await request("/debts/payoff", {
+    method: "POST",
+    body: {
+      amount: 150,
+      loan_origin: loanOrigin,
+      statement_month: "2026-04",
+      payment_date: "2026-04-10",
+      entity_id: entity.id,
+      from_account_id: account.id,
+    },
+  });
+  assert.equal(response.status, 201, JSON.stringify(response.data));
+  assert.equal(response.data?.expense?.from_account_id, account.id);
+  assert.equal(response.data?.expense?.from_account_name, account.name);
+  assertMoneyEqual(
+    response.data?.outstanding_after,
+    0,
+    "Statement payoff should clear the selected statement cycle balance"
+  );
 });
 
 test("account ledger reflects legacy income and expense removal", async () => {

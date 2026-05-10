@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { Link } from "react-router-dom";
 import {
   CartesianGrid,
@@ -22,7 +22,6 @@ import {
   buildCashflowTrendTimeline,
   buildHealthScore,
   buildRecurringBills,
-  buildTopAccounts,
   formatCompactCurrency,
   formatCurrency,
   formatShortDate,
@@ -49,7 +48,20 @@ export default function Home() {
   } = useFinanceData();
 
   const currency = balance?.currency_code || "PHP";
-  const topAccounts = useMemo(() => buildTopAccounts(accounts), [accounts]);
+  const rankedAccounts = useMemo(
+    () =>
+      [...accounts].sort((a, b) => {
+        const aBalance = Number(a.balance || 0);
+        const bBalance = Number(b.balance || 0);
+        const absoluteDelta = Math.abs(bBalance) - Math.abs(aBalance);
+        if (absoluteDelta !== 0) {
+          return absoluteDelta;
+        }
+        return bBalance - aBalance;
+      }),
+    [accounts]
+  );
+  const [selectedAccountIds, setSelectedAccountIds] = useState<number[]>([]);
   const upcomingBills = useMemo(() => buildRecurringBills(recurringItems), [recurringItems]);
   const healthScore = useMemo(
     () => buildHealthScore(balance, scopedTransactions, recurringItems, budgets),
@@ -67,6 +79,74 @@ export default function Home() {
     () => buildCategoryMetaByName(incomeCategories, "income-category"),
     [incomeCategories]
   );
+  const effectiveSelectedAccountIds = selectedAccountIds.length
+    ? selectedAccountIds
+    : rankedAccounts.map((account) => Number(account.id));
+  const selectedAccountIdSet = useMemo(
+    () => new Set(effectiveSelectedAccountIds),
+    [effectiveSelectedAccountIds]
+  );
+  const selectedAccounts = useMemo(
+    () =>
+      rankedAccounts.filter((account) => selectedAccountIdSet.has(Number(account.id))),
+    [rankedAccounts, selectedAccountIdSet]
+  );
+  const selectedAccountsTotal = useMemo(
+    () => selectedAccounts.reduce((sum, account) => sum + Number(account.balance || 0), 0),
+    [selectedAccounts]
+  );
+  const [animationsReady, setAnimationsReady] = useState(false);
+  const [animationStartAt, setAnimationStartAt] = useState<number | null>(null);
+  const animatedHealthScore = useAnimatedValue(healthScore.score, {
+    duration: 2200,
+    initialValue: 0,
+    enabled: animationsReady,
+    sharedStartAt: animationStartAt,
+  });
+  const healthCircumference = 2 * Math.PI * 80;
+  const healthOffset =
+    healthCircumference - (Math.max(animatedHealthScore, 0) / 1000) * healthCircumference;
+
+  useEffect(() => {
+    if (typeof window === "undefined") {
+      return;
+    }
+
+    const markReady = () => {
+      window.setTimeout(() => {
+        setAnimationStartAt(performance.now() + 180);
+        setAnimationsReady(true);
+      }, 120);
+    };
+
+    if (document.readyState === "complete") {
+      markReady();
+      return;
+    }
+
+    window.addEventListener("load", markReady, { once: true });
+    return () => {
+      window.removeEventListener("load", markReady);
+    };
+  }, []);
+
+  function toggleAccountSelection(accountId: number) {
+    setSelectedAccountIds((current) => {
+      const currentlySelected = current.length
+        ? current
+        : rankedAccounts.map((account) => Number(account.id));
+      const next = currentlySelected.includes(accountId)
+        ? currentlySelected.filter((id) => id !== accountId)
+        : [...currentlySelected, accountId];
+      return next.length === rankedAccounts.length
+        ? []
+        : next;
+    });
+  }
+
+  function selectAllAccounts() {
+    setSelectedAccountIds([]);
+  }
 
   if (loading) {
     return (
@@ -89,28 +169,39 @@ export default function Home() {
               <div>
                 <h2 className="text-lg font-semibold text-text">Accounts</h2>
                 <p className="mt-0.5 text-sm text-text-secondary">
-                  {accounts.length} accounts •{" "}
-                  <span className="font-medium text-text">
-                    {formatCompactCurrency(balance?.balance || 0, currency)}
-                  </span>
+                  {accounts.length} accounts • tap accounts to adjust the combined total
                 </p>
               </div>
-              <Badge variant="accent" size="md">
-                Live balances
-              </Badge>
+              <button
+                type="button"
+                onClick={selectAllAccounts}
+                className="rounded-full bg-accent-light px-3 py-1 text-xs font-medium text-accent-dark transition hover:bg-accent-light/80"
+              >
+                All accounts
+              </button>
             </div>
 
-            {topAccounts.length === 0 ? (
+            {rankedAccounts.length === 0 ? (
               <EmptyState
                 title="No accounts yet"
                 body="Create accounts in Settings to start tracking balances here."
               />
             ) : (
               <div className="space-y-2">
-                {topAccounts.map((account) => {
+                {rankedAccounts.map((account) => {
                   const accent = buildAccountAccent(account);
+                  const selected = selectedAccountIdSet.has(Number(account.id));
                   return (
-                    <div key={account.id} className="flex items-center gap-3 rounded-lg py-2.5">
+                    <button
+                      type="button"
+                      key={account.id}
+                      onClick={() => toggleAccountSelection(Number(account.id))}
+                      className={`flex w-full items-center gap-3 rounded-xl px-2 py-2.5 text-left transition ${
+                        selected
+                          ? "bg-accent-light/40 ring-1 ring-accent/20"
+                          : "hover:bg-bg-subtle"
+                      }`}
+                    >
                       <div
                         className="flex h-10 w-10 items-center justify-center rounded-xl"
                         style={{ backgroundColor: `${accent}1a` }}
@@ -129,7 +220,16 @@ export default function Home() {
                         </p>
                         <p className="text-2xs text-text-secondary">{account.currency_code}</p>
                       </div>
-                    </div>
+                      <div
+                        className={`flex h-5 w-5 shrink-0 items-center justify-center rounded-full border ${
+                          selected
+                            ? "border-accent bg-accent text-white"
+                            : "border-slate-300 bg-white text-transparent"
+                        }`}
+                      >
+                        <i className="ri-check-line text-xs" />
+                      </div>
+                    </button>
                   );
                 })}
               </div>
@@ -138,14 +238,64 @@ export default function Home() {
 
           <Card variant="hero" className="relative overflow-hidden p-6 md:p-8">
             <div className="absolute inset-0 bg-gradient-to-br from-primary-900 via-primary-700 to-primary-900" />
+            <div className="relative mb-6 flex flex-col gap-2 sm:flex-row sm:items-end sm:justify-between">
+              <div>
+                <span className="text-2xs font-medium uppercase tracking-[0.3em] text-white/60">
+                  Account Balance
+                </span>
+                <div className="mt-2 text-3xl font-bold text-white md:text-4xl">
+                  <AnimatedNumber
+                    enabled={animationsReady}
+                    sharedStartAt={animationStartAt}
+                    value={selectedAccountsTotal}
+                    formatter={(nextValue) => formatCurrency(nextValue, currency)}
+                  />
+                </div>
+              </div>
+              <p className="text-sm text-white/70">
+                {selectedAccounts.length === accounts.length
+                  ? `All ${accounts.length} accounts selected`
+                  : `${selectedAccounts.length} of ${accounts.length} accounts selected`}
+              </p>
+            </div>
             <div className="relative grid gap-8 lg:grid-cols-[180px,1fr]">
               <div className="flex flex-col items-center text-center">
                 <span className="mb-2 text-2xs font-medium uppercase tracking-[0.3em] text-white/60">
                   Financial Health
                 </span>
-                <div className="flex h-40 w-40 items-center justify-center rounded-full border-[10px] border-white/10">
-                  <div>
-                    <div className="text-4xl font-bold text-white">{healthScore.score}</div>
+                <div className="relative h-40 w-40">
+                  <svg viewBox="0 0 200 200" className="h-full w-full -rotate-90">
+                    <circle
+                      cx="100"
+                      cy="100"
+                      r="80"
+                      fill="none"
+                      stroke="rgba(255,255,255,0.1)"
+                      strokeWidth="10"
+                    />
+                    <circle
+                      cx="100"
+                      cy="100"
+                      r="80"
+                      fill="none"
+                      stroke="url(#homeHealthGrad)"
+                      strokeWidth="10"
+                      strokeLinecap="round"
+                      strokeDasharray={healthCircumference}
+                      strokeDashoffset={healthOffset}
+                      className="transition-all duration-700"
+                    />
+                    <defs>
+                      <linearGradient id="homeHealthGrad" x1="0%" y1="0%" x2="100%" y2="0%">
+                        <stop offset="0%" stopColor="#16A34A" />
+                        <stop offset="100%" stopColor="#22C55E" />
+                      </linearGradient>
+                    </defs>
+                  </svg>
+                  <div className="absolute inset-0 flex flex-col items-center justify-center">
+                    <div className="text-4xl font-bold text-white">
+                      {Math.round(animatedHealthScore)}
+                    </div>
                     <div className="text-sm text-white/60">/ 1000</div>
                   </div>
                 </div>
@@ -154,33 +304,12 @@ export default function Home() {
 
               <div className="space-y-5">
                 {healthScore.metrics.map((metric) => (
-                  <div key={metric.label}>
-                    <div className="mb-2 flex items-center justify-between text-sm">
-                      <span className="text-white/70">{metric.label}</span>
-                      <span className="font-semibold text-white">
-                        {metric.value}
-                        {metric.label === "Emergency Fund" ? " mo" : "%"}
-                      </span>
-                    </div>
-                    <div className="h-2 overflow-hidden rounded-full bg-white/10">
-                      <div
-                        className="h-full rounded-full"
-                        style={{
-                          width: `${Math.min((metric.value / metric.target) * 100, 100)}%`,
-                          backgroundColor:
-                            metric.color === "positive"
-                              ? "#16A34A"
-                              : metric.color === "warning"
-                                ? "#D97706"
-                                : "#DC2626",
-                        }}
-                      />
-                    </div>
-                    <div className="mt-1 text-2xs text-white/45">
-                      Target: {metric.target}
-                      {metric.label === "Emergency Fund" ? " mo" : "%"}
-                    </div>
-                  </div>
+                  <AnimatedHealthMetric
+                    key={metric.label}
+                    animationsReady={animationsReady}
+                    sharedStartAt={animationStartAt}
+                    metric={metric}
+                  />
                 ))}
               </div>
             </div>
@@ -189,6 +318,8 @@ export default function Home() {
 
         <section className="mb-6">
           <HomeCashFlowSection
+            animationsReady={animationsReady}
+            animationStartAt={animationStartAt}
             currency={currency}
             currentMonth={currentMonth}
             debtList={debtList}
@@ -412,12 +543,16 @@ function buildCategoryMetaByName(list: CategoryRecord[], seedPrefix: string) {
 }
 
 function HomeCashFlowSection({
+  animationsReady,
+  animationStartAt,
   currency,
   currentMonth,
   debtList,
   expenseList,
   incomeList,
 }: {
+  animationsReady: boolean;
+  animationStartAt: number | null;
   currency: string;
   currentMonth: string;
   debtList: Parameters<typeof buildCashflowTrendTimeline>[2];
@@ -563,7 +698,12 @@ function HomeCashFlowSection({
           </div>
           <p className="text-2xs uppercase tracking-wide text-text-secondary">Income</p>
           <p className="mt-1 text-lg font-bold text-text tabular-nums">
-            {formatCompactCurrency(summary.totalIncome, currency)}
+            <AnimatedNumber
+              enabled={animationsReady}
+              sharedStartAt={animationStartAt}
+              value={summary.totalIncome}
+              formatter={(nextValue) => formatCompactCurrency(nextValue, currency)}
+            />
           </p>
         </div>
         <div className="rounded-lg bg-negative-light p-4 text-center">
@@ -572,7 +712,12 @@ function HomeCashFlowSection({
           </div>
           <p className="text-2xs uppercase tracking-wide text-text-secondary">Expenses</p>
           <p className="mt-1 text-lg font-bold text-text tabular-nums">
-            {formatCompactCurrency(summary.totalExpenses, currency)}
+            <AnimatedNumber
+              enabled={animationsReady}
+              sharedStartAt={animationStartAt}
+              value={summary.totalExpenses}
+              formatter={(nextValue) => formatCompactCurrency(nextValue, currency)}
+            />
           </p>
         </div>
         <div className="rounded-lg bg-accent-light p-4 text-center">
@@ -581,12 +726,147 @@ function HomeCashFlowSection({
           </div>
           <p className="text-2xs uppercase tracking-wide text-text-secondary">Debt</p>
           <p className="mt-1 text-lg font-bold text-text tabular-nums">
-            {formatCompactCurrency(summary.totalDebt, currency)}
+            <AnimatedNumber
+              enabled={animationsReady}
+              sharedStartAt={animationStartAt}
+              value={summary.totalDebt}
+              formatter={(nextValue) => formatCompactCurrency(nextValue, currency)}
+            />
           </p>
         </div>
       </div>
     </Card>
   );
+}
+
+function AnimatedNumber({
+  enabled = true,
+  formatter,
+  initialValue = 0,
+  sharedStartAt,
+  value,
+}: {
+  enabled?: boolean;
+  formatter: (value: number) => string;
+  initialValue?: number;
+  sharedStartAt?: number | null;
+  value: number;
+}) {
+  const displayValue = useAnimatedValue(value, {
+    duration: 1200,
+    initialValue,
+    enabled,
+    sharedStartAt,
+  });
+
+  return <>{formatter(displayValue)}</>;
+}
+
+function AnimatedHealthMetric({
+  animationsReady,
+  metric,
+  sharedStartAt,
+}: {
+  animationsReady: boolean;
+  metric: { color: string; label: string; target: number; value: number };
+  sharedStartAt: number | null;
+}) {
+  const animatedValue = useAnimatedValue(metric.value, {
+    duration: 2000,
+    initialValue: 0,
+    enabled: animationsReady,
+    sharedStartAt,
+  });
+  const animatedWidth = Math.min((animatedValue / metric.target) * 100, 100);
+
+  return (
+    <div>
+      <div className="mb-2 flex items-center justify-between text-sm">
+        <span className="text-white/70">{metric.label}</span>
+        <span className="font-semibold text-white">
+          {Math.round(animatedValue)}
+          {metric.label === "Emergency Fund" ? " mo" : "%"}
+        </span>
+      </div>
+      <div className="h-2 overflow-hidden rounded-full bg-white/10">
+        <div
+          className="h-full rounded-full transition-all duration-700"
+          style={{
+            width: `${animatedWidth}%`,
+            backgroundColor:
+              metric.color === "positive"
+                ? "#16A34A"
+                : metric.color === "warning"
+                  ? "#D97706"
+                  : "#DC2626",
+          }}
+        />
+      </div>
+      <div className="mt-1 text-2xs text-white/45">
+        Target: {metric.target}
+        {metric.label === "Emergency Fund" ? " mo" : "%"}
+      </div>
+    </div>
+  );
+}
+
+function useAnimatedValue(
+  targetValue: number,
+  {
+    duration = 1000,
+    enabled = true,
+    initialValue = 0,
+    sharedStartAt = null,
+  }: {
+    duration?: number;
+    enabled?: boolean;
+    initialValue?: number;
+    sharedStartAt?: number | null;
+  } = {}
+) {
+  const [displayValue, setDisplayValue] = useState(initialValue);
+  const previousTargetRef = useRef(initialValue);
+  const firstAnimationRef = useRef(true);
+
+  useEffect(() => {
+    if (!enabled) {
+      setDisplayValue(initialValue);
+      return;
+    }
+
+    const startValue = firstAnimationRef.current ? initialValue : previousTargetRef.current;
+    const delta = targetValue - startValue;
+    const startAt = sharedStartAt ?? performance.now() + 80;
+    let frameId = 0;
+
+    setDisplayValue(startValue);
+
+    const animate = (now: number) => {
+      if (now < startAt) {
+        frameId = window.requestAnimationFrame(animate);
+        return;
+      }
+
+      const elapsed = now - startAt;
+      const progress = Math.min(elapsed / duration, 1);
+      const eased = 1 - Math.pow(1 - progress, 4);
+      setDisplayValue(startValue + delta * eased);
+
+      if (progress < 1) {
+        frameId = window.requestAnimationFrame(animate);
+      }
+    };
+
+    frameId = window.requestAnimationFrame(animate);
+    previousTargetRef.current = targetValue;
+    firstAnimationRef.current = false;
+
+    return () => {
+      window.cancelAnimationFrame(frameId);
+    };
+  }, [duration, enabled, initialValue, sharedStartAt, targetValue]);
+
+  return displayValue;
 }
 
 function LinkBadge({ href, label }: { href: string; label: string }) {

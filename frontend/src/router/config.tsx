@@ -8,6 +8,7 @@ import Reporting from "../pages/reporting/page";
 import Forecast from "../pages/forecast/page";
 import Settings from "../pages/settings/page";
 import DesignSystem from "../pages/design/page";
+import Notifications from "../pages/notifications/page";
 
 const routes: RouteObject[] = [
   {
@@ -25,6 +26,10 @@ const routes: RouteObject[] = [
   {
     path: "/reporting",
     element: <Reporting />,
+  },
+  {
+    path: "/notifications",
+    element: <Notifications />,
   },
   {
     path: "/forecast",

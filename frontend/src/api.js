@@ -310,6 +310,11 @@ export const api = {
       method: "POST",
       body: JSON.stringify(payload),
     }),
+  updateTransfer: (id, payload) =>
+    request(`/transfers/${encodeURIComponent(String(id))}`, {
+      method: "PUT",
+      body: JSON.stringify(payload),
+    }),
   deleteTransfer: (id, params = {}) => {
     const query = new URLSearchParams();
     if (params.source_type) {

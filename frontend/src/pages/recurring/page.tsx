@@ -1,4 +1,5 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
+import { useSearchParams } from "react-router-dom";
 import Badge from "@/components/base/Badge";
 import Card from "@/components/base/Card";
 import Navbar from "@/components/feature/Navbar";
@@ -27,8 +28,25 @@ export default function Recurring() {
     recurringItems,
     skipRecurring,
   } = useFinanceData();
-  const [selectedTab, setSelectedTab] = useState<RecurringTab>("due_now");
+  const [searchParams, setSearchParams] = useSearchParams();
+  const [selectedTab, setSelectedTab] = useState<RecurringTab>(
+    parseRecurringTab(searchParams.get("tab")) || "due_now"
+  );
   const currency = balance?.currency_code || "PHP";
+
+  useEffect(() => {
+    const tab = parseRecurringTab(searchParams.get("tab"));
+    if (tab && tab !== selectedTab) {
+      setSelectedTab(tab);
+    }
+  }, [searchParams, selectedTab]);
+
+  function handleTabChange(tab: RecurringTab) {
+    setSelectedTab(tab);
+    const nextParams = new URLSearchParams(searchParams);
+    nextParams.set("tab", tab);
+    setSearchParams(nextParams, { replace: true });
+  }
 
   const decoratedItems = useMemo(() => {
     const today = new Date().toISOString().slice(0, 10);
@@ -136,7 +154,7 @@ export default function Recurring() {
           ).map((tab) => (
             <button
               key={tab.key}
-              onClick={() => setSelectedTab(tab.key)}
+              onClick={() => handleTabChange(tab.key)}
               className={`flex-1 rounded-md px-4 py-2 text-sm font-medium transition-colors ${
                 selectedTab === tab.key
                   ? "bg-white text-text shadow-sm"
@@ -307,6 +325,13 @@ function MetricCard({
 
 function normalizeCategoryKey(value: string | null | undefined) {
   return String(value || "").trim().toLowerCase();
+}
+
+function parseRecurringTab(value: string | null): RecurringTab | null {
+  if (value === "due_now" || value === "income" || value === "expense" || value === "transfer") {
+    return value;
+  }
+  return null;
 }
 
 function buildCategoryMetaByName(list: CategoryRecord[], seedPrefix: string) {
