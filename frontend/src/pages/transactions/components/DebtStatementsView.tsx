@@ -65,6 +65,7 @@ type Props = {
   onDeleteDebtRow: (row: DebtRecord) => void;
   onEditDebtRow: (row: DebtRecord) => void;
   search: string;
+  selectedAccountId: string;
   selectedCategories: string[];
   selectedMonth: string;
   settings: SettingsRecord | null;
@@ -80,6 +81,7 @@ export default function DebtStatementsView({
   onDeleteDebtRow,
   onEditDebtRow,
   search,
+  selectedAccountId,
   selectedCategories,
   selectedMonth,
   settings,
@@ -132,9 +134,10 @@ export default function DebtStatementsView({
       const matchesCategory =
         selectedCategorySet.size === 0 || selectedCategorySet.has(categoryLabel);
       const matchesMonth = !selectedMonth || statementMonth === selectedMonth;
-      return matchesSearch && matchesCategory && matchesMonth;
+      const matchesAccount = selectedAccountId === "";
+      return matchesSearch && matchesCategory && matchesMonth && matchesAccount;
     });
-  }, [configMap, debtList, normalizedSearch, selectedCategorySet, selectedMonth]);
+  }, [configMap, debtList, normalizedSearch, selectedAccountId, selectedCategorySet, selectedMonth]);
 
   const sections = useMemo<DebtStatementSection[]>(() => {
     const sectionMap = new Map<string, Map<string, DebtRecord[]>>();

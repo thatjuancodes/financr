@@ -50,8 +50,10 @@ type FinanceContextValue = {
   refresh: () => Promise<void>;
   clearNotice: () => void;
   createEntity: (payload: { name: string; type: string }) => Promise<void>;
+  updateEntity: (id: string, payload: { name?: string; type?: string }) => Promise<void>;
   deleteEntity: (id: string) => Promise<void>;
   createAccount: (payload: Record<string, unknown>) => Promise<void>;
+  updateAccount: (id: number, payload: Record<string, unknown>) => Promise<void>;
   deleteAccount: (id: number) => Promise<void>;
   createIncome: (payload: Record<string, unknown>) => Promise<void>;
   updateIncome: (id: number, payload: Record<string, unknown>) => Promise<void>;
@@ -78,6 +80,7 @@ type FinanceContextValue = {
   deleteIncomeCategory: (id: number) => Promise<void>;
   createBudget: (payload: Record<string, unknown>) => Promise<void>;
   deleteBudget: (id: number) => Promise<void>;
+  setDefaultAccounts: (payload: Record<string, unknown>) => Promise<void>;
   setCurrency: (code: string) => Promise<void>;
   confirmRecurring: (id: number) => Promise<void>;
   skipRecurring: (id: number) => Promise<void>;
@@ -236,6 +239,8 @@ export function FinanceDataProvider({ children }: { children: React.ReactNode })
     refresh,
     clearNotice: () => setNotice(""),
     createEntity: (payload) => runMutation(() => api.createEntity(payload), "Entity created"),
+    updateEntity: (id, payload) =>
+      runMutation(() => api.updateEntity(id, payload), "Entity updated"),
     deleteEntity: async (id) => {
       await runMutation(() => api.deleteEntity(id), "Entity deleted");
       if (selectedEntityId === id) {
@@ -243,6 +248,8 @@ export function FinanceDataProvider({ children }: { children: React.ReactNode })
       }
     },
     createAccount: (payload) => runMutation(() => api.createAccount(payload), "Account created"),
+    updateAccount: (id, payload) =>
+      runMutation(() => api.updateAccount(id, payload), "Account updated"),
     deleteAccount: (id) => runMutation(() => api.deleteAccount(id), "Account deleted"),
     createIncome: (payload) => runMutation(() => api.addIncome(payload), "Income created"),
     updateIncome: (id, payload) => runMutation(() => api.updateIncome(id, payload), "Income updated"),
@@ -281,6 +288,8 @@ export function FinanceDataProvider({ children }: { children: React.ReactNode })
       runMutation(() => api.deleteIncomeCategory(id), "Income category deleted"),
     createBudget: (payload) => runMutation(() => api.addBudget(payload), "Budget created"),
     deleteBudget: (id) => runMutation(() => api.deleteBudget(id), "Budget deleted"),
+    setDefaultAccounts: (payload) =>
+      runMutation(() => api.setDefaultAccounts(payload), "Default accounts updated"),
     setCurrency: (code) => runMutation(() => api.setCurrency(code), "Currency updated"),
     confirmRecurring: (id) =>
       runMutation(() => api.confirmRecurringItem(id), "Recurring item confirmed"),

@@ -17,7 +17,7 @@ export default function Navbar() {
   const [scrolled, setScrolled] = useState(false);
   const [mobileOpen, setMobileOpen] = useState(false);
   const [hiddenByTransactionsFilter, setHiddenByTransactionsFilter] = useState(false);
-  const { pendingRecurringItems, selectedEntityId, entities } = useFinanceData();
+  const { pendingRecurringItems } = useFinanceData();
 
   useEffect(() => {
     const handleScroll = () => {
@@ -52,8 +52,6 @@ export default function Navbar() {
     };
   }, [location.pathname]);
 
-  const activeEntity =
-    entities.find((entity) => entity.id === selectedEntityId)?.name || "All entities";
   const notificationCount = pendingRecurringItems.length;
   const notificationsActive = location.pathname === "/notifications";
 
@@ -73,10 +71,7 @@ export default function Navbar() {
             <div className="w-8 h-8 rounded-md bg-accent flex items-center justify-center">
               <i className="ri-bank-card-line text-white text-base" />
             </div>
-            <div>
-              <span className="block font-semibold text-lg tracking-tight text-text">Financr</span>
-              <span className="hidden text-2xs text-text-secondary md:block">{activeEntity}</span>
-            </div>
+            <span className="block font-semibold text-lg tracking-tight text-text">Steward</span>
           </Link>
         </div>
 

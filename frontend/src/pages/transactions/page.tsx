@@ -9,7 +9,10 @@ import { ALL_ENTITIES_ID, formatCurrency, formatLongDate, formatShortDate, month
 import DebtStatementsView from "@/pages/transactions/components/DebtStatementsView";
 import type { CategoryRecord } from "@/types/finance";
 import { buildDebtCycleMonthsFromData } from "@/utils/appState";
-import { createTransferDraft as createDefaultTransferDraft } from "@/utils/accounts";
+import {
+  createTransferDraft as createDefaultTransferDraft,
+  normalizeDefaultAccountPreferencesForEntity,
+} from "@/utils/accounts";
 import { buildCategoryBadgeStyle, resolveCategoryColor } from "@/utils/categoryColors";
 import { monthLabel } from "@/utils/format";
 
@@ -157,6 +160,8 @@ export default function Transactions() {
   const [selectedMonth, setSelectedMonth] = useState(currentMonth);
   const [selectedCategories, setSelectedCategories] = useState<string[]>([]);
   const [isCategoryMenuOpen, setIsCategoryMenuOpen] = useState(false);
+  const [selectedAccountId, setSelectedAccountId] = useState("");
+  const [isAccountMenuOpen, setIsAccountMenuOpen] = useState(false);
   const [isMonthMenuOpen, setIsMonthMenuOpen] = useState(false);
   const [sortOrder, setSortOrder] = useState<SortOrder>("date_desc");
   const [isSortMenuOpen, setIsSortMenuOpen] = useState(false);
@@ -175,6 +180,7 @@ export default function Transactions() {
   const [genericEditError, setGenericEditError] = useState("");
   const [isGenericEditSubmitting, setIsGenericEditSubmitting] = useState(false);
   const categoryMenuRef = useRef<HTMLDivElement | null>(null);
+  const accountMenuRef = useRef<HTMLDivElement | null>(null);
   const monthMenuRef = useRef<HTMLDivElement | null>(null);
   const sortMenuRef = useRef<HTMLDivElement | null>(null);
   const groupMenuRef = useRef<HTMLDivElement | null>(null);
@@ -219,6 +225,8 @@ export default function Transactions() {
             source_type: "expense",
             type: "expense" as const,
             amount: Number(expense.amount || 0),
+            from_account_id: expense.from_account_id ?? null,
+            to_account_id: null,
             from_account_name: expense.from_account_name || null,
             to_account_name: null,
             from_entity_name: expense.entity_name || null,
@@ -245,6 +253,8 @@ export default function Transactions() {
           source_type: "debt",
           type: "debt" as const,
           amount: Number(debt.amount || 0),
+          from_account_id: null,
+          to_account_id: null,
           from_account_name: null,
           to_account_name: null,
           from_entity_name: debt.entity_name || null,
@@ -319,6 +329,27 @@ export default function Transactions() {
       )
     ).sort();
   }, [sourceRows]);
+  const accountFilterOptions = useMemo(() => {
+    return [...accounts]
+      .sort((left, right) => {
+        const entityCompare = String(left.entity_name || "").localeCompare(
+          String(right.entity_name || "")
+        );
+        if (entityCompare !== 0) {
+          return entityCompare;
+        }
+        return String(left.name || "").localeCompare(String(right.name || ""));
+      })
+      .map((account) => ({
+        label: formatAccountOptionLabel(account),
+        value: String(account.id),
+      }));
+  }, [accounts]);
+  const selectedAccountLabel =
+    selectedAccountId === ""
+      ? "All Accounts"
+      : accountFilterOptions.find((option) => option.value === selectedAccountId)?.label ||
+        "All Accounts";
   const loanOriginOptions = useMemo(() => {
     const origins = new Set<string>();
     debtList.forEach((debt) => {
@@ -351,9 +382,21 @@ export default function Transactions() {
   }, [categoryFilters]);
 
   useEffect(() => {
+    if (
+      selectedAccountId &&
+      !accountFilterOptions.some((option) => option.value === selectedAccountId)
+    ) {
+      setSelectedAccountId("");
+    }
+  }, [accountFilterOptions, selectedAccountId]);
+
+  useEffect(() => {
     function handlePointerDown(event: MouseEvent) {
       if (!categoryMenuRef.current?.contains(event.target as Node)) {
         setIsCategoryMenuOpen(false);
+      }
+      if (!accountMenuRef.current?.contains(event.target as Node)) {
+        setIsAccountMenuOpen(false);
       }
       if (!monthMenuRef.current?.contains(event.target as Node)) {
         setIsMonthMenuOpen(false);
@@ -404,12 +447,27 @@ export default function Transactions() {
   }, [isFilterDocked]);
 
   function resetAddDrawerState(nextType: DrawerTransactionType) {
+    const defaultAccountPreferences = normalizeDefaultAccountPreferencesForEntity(
+      settings,
+      accounts,
+      defaultEntityId
+    );
     setDrawerMode("create");
     setEditTarget(null);
     setDrawerTransactionType(nextType);
     setDrawerError("");
-    setExpenseDraft(createEmptyExpenseDraft(defaultEntityId));
-    setIncomeDraft(createEmptyIncomeDraft(defaultEntityId));
+    setExpenseDraft(
+      createEmptyExpenseDraft(
+        defaultEntityId,
+        defaultAccountPreferences.default_expense_account_id
+      )
+    );
+    setIncomeDraft(
+      createEmptyIncomeDraft(
+        defaultEntityId,
+        defaultAccountPreferences.default_income_account_id
+      )
+    );
     setTransferDraft(createEmptyTransferDraft(accounts));
     setDebtDraft(createEmptyDebtDraft(defaultEntityId));
   }
@@ -700,9 +758,13 @@ export default function Transactions() {
       const matchesCategory =
         selectedCategorySet.size === 0 || selectedCategorySet.has(categoryLabel);
       const matchesMonth = !selectedMonth || monthKey(transaction.created_at) === selectedMonth;
-      return matchesSearch && matchesType && matchesCategory && matchesMonth;
+      const matchesAccount =
+        selectedAccountId === "" ||
+        String(transaction.from_account_id || "") === selectedAccountId ||
+        String(transaction.to_account_id || "") === selectedAccountId;
+      return matchesSearch && matchesType && matchesCategory && matchesMonth && matchesAccount;
     });
-  }, [activeType, search, selectedCategorySet, selectedMonth, sourceRows]);
+  }, [activeType, search, selectedAccountId, selectedCategorySet, selectedMonth, sourceRows]);
   const visibleRows = useMemo(() => {
     const rows = [...filtered];
 
@@ -1381,7 +1443,7 @@ export default function Transactions() {
               </div>
             </div>
 
-	            <div className={`mt-3 grid gap-3 ${activeType === "debt" ? "md:grid-cols-[1.1fr,0.9fr]" : "md:grid-cols-3"}`}>
+	            <div className={`mt-3 grid gap-3 ${activeType === "debt" ? "md:grid-cols-3" : "md:grid-cols-4"}`}>
 	              <div className="relative" ref={categoryMenuRef}>
 	                <button
 	                  type="button"
@@ -1430,6 +1492,62 @@ export default function Transactions() {
 	                            }`}
 	                          >
 	                            {category}
+	                          </button>
+	                        );
+	                      })}
+	                    </div>
+	                  </div>
+	                ) : null}
+	              </div>
+	              <div className="relative" ref={accountMenuRef}>
+	                <button
+	                  type="button"
+	                  onClick={() => setIsAccountMenuOpen((open) => !open)}
+	                  className="flex w-full items-center justify-between rounded-lg bg-bg-subtle px-3 py-2.5 text-left text-sm text-text outline-none transition hover:bg-bg"
+	                >
+	                  <span className="truncate">{selectedAccountLabel}</span>
+	                  <i
+	                    className={`ri-arrow-down-s-line text-base text-text-secondary transition-transform ${
+	                      isAccountMenuOpen ? "rotate-180" : ""
+	                    }`}
+	                  />
+	                </button>
+	                {isAccountMenuOpen ? (
+	                  <div className="absolute left-0 right-0 top-[calc(100%+0.5rem)] z-20 max-h-72 overflow-y-auto rounded-xl border border-slate-200 bg-white p-2 shadow-xl">
+	                    <div className="space-y-1">
+	                      <button
+	                        type="button"
+	                        onClick={() => {
+	                          setSelectedAccountId("");
+	                          setIsAccountMenuOpen(false);
+	                        }}
+	                        className={`flex w-full items-center justify-between rounded-lg px-3 py-2 text-sm transition ${
+	                          selectedAccountId === ""
+	                            ? "bg-accent text-white"
+	                            : "text-text-secondary hover:bg-bg-subtle hover:text-text"
+	                        }`}
+	                      >
+	                        <span>All Accounts</span>
+	                        {selectedAccountId === "" ? <i className="ri-check-line text-base" /> : null}
+	                      </button>
+	                      {accountFilterOptions.map((option) => {
+	                        const active = selectedAccountId === option.value;
+	                        return (
+	                          <button
+	                            key={option.value}
+	                            type="button"
+	                            onClick={() => {
+	                              setSelectedAccountId(option.value);
+	                              setIsAccountMenuOpen(false);
+	                            }}
+	                            className={`flex w-full items-center justify-between rounded-lg px-3 py-2 text-sm transition ${
+	                              active
+	                                ? "bg-accent text-white"
+	                                : "text-text-secondary hover:bg-bg-subtle hover:text-text"
+	                            }`}
+	                          >
+	                            <span className="truncate">{option.label}</span>
+	                            {active ? <i className="ri-check-line text-base" /> : null}
 	                          </button>
 	                        );
 	                      })}
@@ -1551,6 +1669,7 @@ export default function Transactions() {
 	              void openEditTransaction(createDebtTransactionRow(row, currency));
 	            }}
 	            search={search}
+	            selectedAccountId={selectedAccountId}
 	            selectedCategories={selectedCategories}
 	            selectedMonth={selectedMonth}
 	            settings={settings}
@@ -1662,6 +1781,7 @@ function TransactionRowCard({
 }) {
   const categoryIconStyle = buildCategoryBadgeStyle(categoryMeta.color);
   const usesTransferIcon = transaction.type === "transfer";
+  const accountDetails = getTransactionAccountDetails(transaction);
 
   return (
     <Card className="overflow-hidden">
@@ -1714,7 +1834,7 @@ function TransactionRowCard({
             <span>•</span>
             <span className="truncate">{categoryMeta.label}</span>
             <span>•</span>
-            <span>{transaction.from_account_name || transaction.to_account_name || "Manual"}</span>
+            <span className="truncate">{accountDetails.summary}</span>
           </div>
         </div>
         <div className="flex items-center gap-2">
@@ -1769,11 +1889,15 @@ function TransactionRowCard({
               {formatLongDate(transaction.created_at)}
             </InfoBlock>
             <InfoBlock label="Source Type">{transaction.source_type}</InfoBlock>
+            <InfoBlock label="Account Flow">{accountDetails.summary}</InfoBlock>
+            <InfoBlock label="Account Origin">
+              {accountDetails.originLabel}
+            </InfoBlock>
             <InfoBlock label="From">
-              {transaction.from_account_name || transaction.from_entity_name || "N/A"}
+              {accountDetails.fromLabel}
             </InfoBlock>
             <InfoBlock label="To">
-              {transaction.to_account_name || transaction.to_entity_name || "N/A"}
+              {accountDetails.toLabel}
             </InfoBlock>
             <InfoBlock label="Category">
               <span className="inline-flex items-center gap-2">
@@ -2003,7 +2127,7 @@ function TransactionCreateDrawer({
                   onExpenseDraftChange((current) => ({ ...current, from_account_id: value }))
                 }
                 options={[
-                  { label: "Use default account", value: "" },
+                  { label: "Select account", value: "" },
                   ...accounts.map((account) => ({
                     label: formatAccountOptionLabel(account),
                     value: String(account.id),
@@ -2093,7 +2217,7 @@ function TransactionCreateDrawer({
                   onIncomeDraftChange((current) => ({ ...current, to_account_id: value }))
                 }
                 options={[
-                  { label: "Use default account", value: "" },
+                  { label: "Select account", value: "" },
                   ...accounts.map((account) => ({
                     label: formatAccountOptionLabel(account),
                     value: String(account.id),
@@ -2522,7 +2646,7 @@ function GenericEditDrawer({
                     {
                       label:
                         transactionDraft.type === "expense"
-                          ? "Use default account"
+                          ? "Select account"
                           : "Select account",
                       value: "",
                     },
@@ -2547,7 +2671,7 @@ function GenericEditDrawer({
                     {
                       label:
                         transactionDraft.type === "income"
-                          ? "Use default account"
+                          ? "Select account"
                           : "Select account",
                       value: "",
                     },
@@ -2873,27 +2997,33 @@ function FormTextarea({
   );
 }
 
-function createEmptyExpenseDraft(entityId: string): ExpenseDraft {
+function createEmptyExpenseDraft(
+  entityId: string,
+  defaultAccountId = ""
+): ExpenseDraft {
   return {
     amount: "",
     entity_id: entityId,
     expense_category_id: "",
     expense_expectation: "expected",
-    from_account_id: "",
+    from_account_id: String(defaultAccountId || ""),
     name: "",
     notes: "",
     spent_at: getTodayDateInputValue(),
   };
 }
 
-function createEmptyIncomeDraft(entityId: string): IncomeDraft {
+function createEmptyIncomeDraft(
+  entityId: string,
+  defaultAccountId = ""
+): IncomeDraft {
   return {
     amount: "",
     entity_id: entityId,
     income_category_id: "",
     received_date: getTodayDateInputValue(),
     source: "",
-    to_account_id: "",
+    to_account_id: String(defaultAccountId || ""),
   };
 }
 
@@ -2983,6 +3113,54 @@ function formatAccountOptionLabel(account: {
   currency_code: string;
 }) {
   return `${account.name} • ${account.entity_name} • ${account.currency_code}`;
+}
+
+function getTransactionAccountDetails(transaction: TransactionListRow) {
+  const fromLabel = transaction.from_account_name || transaction.from_entity_name || "N/A";
+  const toLabel = transaction.to_account_name || transaction.to_entity_name || "N/A";
+
+  if (transaction.type === "transfer") {
+    return {
+      fromLabel,
+      originLabel: `From ${fromLabel} to ${toLabel}`,
+      summary: `${fromLabel} -> ${toLabel}`,
+      toLabel,
+    };
+  }
+
+  if (transaction.type === "income") {
+    return {
+      fromLabel,
+      originLabel: `Deposited to ${toLabel}`,
+      summary: `To ${toLabel}`,
+      toLabel,
+    };
+  }
+
+  if (transaction.type === "expense") {
+    return {
+      fromLabel,
+      originLabel: `Paid from ${fromLabel}`,
+      summary: `From ${fromLabel}`,
+      toLabel,
+    };
+  }
+
+  if (transaction.type === "debt") {
+    return {
+      fromLabel,
+      originLabel: "No linked account",
+      summary: "No linked account",
+      toLabel,
+    };
+  }
+
+  return {
+    fromLabel,
+    originLabel: fromLabel !== "N/A" || toLabel !== "N/A" ? `${fromLabel} -> ${toLabel}` : "Manual",
+    summary: fromLabel !== "N/A" || toLabel !== "N/A" ? `${fromLabel} -> ${toLabel}` : "Manual",
+    toLabel,
+  };
 }
 
 function getTodayDateInputValue() {

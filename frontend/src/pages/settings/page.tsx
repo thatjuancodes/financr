@@ -1,6 +1,7 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import type { Dispatch, SetStateAction } from "react";
 import { useSearchParams } from "react-router-dom";
+import { api } from "@/api";
 import Card from "@/components/base/Card";
 import Navbar from "@/components/feature/Navbar";
 import { EmptyState, LoadingState } from "@/components/feature/PageState";
@@ -8,6 +9,7 @@ import { useFinanceData } from "@/contexts/FinanceDataContext";
 import { formatCurrency } from "@/lib/finance";
 import { AutomationContent } from "@/pages/automation/page";
 import DebtSettingsSection from "@/pages/settings/components/DebtSettingsSection";
+import { normalizeDefaultAccountPreferencesForEntity } from "@/utils/accounts";
 import { CATEGORY_COLOR_SWATCHES, buildCategoryBadgeStyle, resolveCategoryColor } from "@/utils/categoryColors";
 import type { CategoryRecord } from "@/types/finance";
 
@@ -16,6 +18,20 @@ type CategoryDraft = {
   name: string;
   color: string | null;
   icon: string | null;
+};
+type EntityDraft = {
+  name: string;
+  type: string;
+};
+type AccountDraft = {
+  name: string;
+  entity_id: string;
+  type: string;
+  currency_code: string;
+};
+type DeleteEntityState = {
+  id: string;
+  name: string;
 };
 
 const SETTINGS_TABS: SettingsTab[] = ["accounts", "categories", "budgets", "debts", "automation", "app"];
@@ -84,8 +100,11 @@ export default function Settings() {
     loanOriginConfigs,
     loading,
     saveLoanOriginConfig,
+    setDefaultAccounts,
     setCurrency,
     settings,
+    updateAccount,
+    updateEntity,
     updateCategory,
     updateIncomeCategory,
   } = useFinanceData();
@@ -102,6 +121,18 @@ export default function Settings() {
   const [accountEntityId, setAccountEntityId] = useState(() => entities[0]?.id || "");
   const [accountType, setAccountType] = useState("bank");
   const [accountCurrency, setAccountCurrency] = useState(currency);
+  const [settingsAccounts, setSettingsAccounts] = useState<typeof accounts>([]);
+  const [isSettingsAccountsLoading, setIsSettingsAccountsLoading] = useState(false);
+  const [activeEntityId, setActiveEntityId] = useState<string | null>(null);
+  const [entityDraft, setEntityDraft] = useState<EntityDraft | null>(null);
+  const [entityDrawerError, setEntityDrawerError] = useState("");
+  const [isEntityDrawerSubmitting, setIsEntityDrawerSubmitting] = useState(false);
+  const [activeAccountId, setActiveAccountId] = useState<number | null>(null);
+  const [accountDraft, setAccountDraft] = useState<AccountDraft | null>(null);
+  const [accountDrawerError, setAccountDrawerError] = useState("");
+  const [isAccountDrawerSubmitting, setIsAccountDrawerSubmitting] = useState(false);
+  const [accountDeleteConfirmName, setAccountDeleteConfirmName] = useState("");
+  const [deletingAccountId, setDeletingAccountId] = useState<number | null>(null);
   const [expenseCategoryName, setExpenseCategoryName] = useState("");
   const [incomeCategoryName, setIncomeCategoryName] = useState("");
   const [activeExpenseCategoryId, setActiveExpenseCategoryId] = useState<number | null>(null);
@@ -123,13 +154,26 @@ export default function Settings() {
     payment_count: "",
     start_date: new Date().toISOString().slice(0, 10),
   });
+  const [defaultAccountsSubmittingEntityId, setDefaultAccountsSubmittingEntityId] =
+    useState("");
+  const [defaultAccountsError, setDefaultAccountsError] = useState("");
+  const [pendingEntityDelete, setPendingEntityDelete] = useState<DeleteEntityState | null>(null);
+  const [entityDeleteConfirmName, setEntityDeleteConfirmName] = useState("");
+  const [entityDeleteError, setEntityDeleteError] = useState("");
+  const [isEntityDeleteSubmitting, setIsEntityDeleteSubmitting] = useState(false);
+
+  useEffect(() => {
+    if (tab === "accounts") {
+      void loadSettingsAccounts();
+    }
+  }, [tab]);
 
   const entityAccounts = useMemo(() => {
     return entities.map((entity) => ({
       entity,
-      accounts: accounts.filter((account) => account.entity_id === entity.id),
+      accounts: settingsAccounts.filter((account) => account.entity_id === entity.id),
     }));
-  }, [accounts, entities]);
+  }, [entities, settingsAccounts]);
   const activeExpenseCategory = useMemo(
     () => categories.find((category) => category.id === activeExpenseCategoryId) || null,
     [activeExpenseCategoryId, categories]
@@ -138,6 +182,178 @@ export default function Settings() {
     () => incomeCategories.find((category) => category.id === activeIncomeCategoryId) || null,
     [activeIncomeCategoryId, incomeCategories]
   );
+
+  async function updateEntityDefaultAccount(
+    entityId: string,
+    kind: "expense" | "income",
+    value: string
+  ) {
+    if (!entityId) {
+      return;
+    }
+    setDefaultAccountsSubmittingEntityId(entityId);
+    setDefaultAccountsError("");
+    try {
+      await setDefaultAccounts({
+        entity_id: entityId,
+        [kind === "income" ? "default_income_account_id" : "default_expense_account_id"]:
+          value ? Number(value) : null,
+      });
+    } catch (error: any) {
+      setDefaultAccountsError(error?.message || "Failed to update default accounts");
+    } finally {
+      setDefaultAccountsSubmittingEntityId("");
+    }
+  }
+
+  async function loadSettingsAccounts() {
+    setIsSettingsAccountsLoading(true);
+    try {
+      const nextAccounts = await api.getAccounts();
+      setSettingsAccounts(Array.isArray(nextAccounts) ? nextAccounts : []);
+    } finally {
+      setIsSettingsAccountsLoading(false);
+    }
+  }
+
+  function openEntityDrawer(entity: { id: string; name: string; type: string }) {
+    setActiveEntityId(entity.id);
+    setEntityDrawerError("");
+    setEntityDraft({
+      name: entity.name,
+      type: entity.type,
+    });
+  }
+
+  function resetEntityDrawer() {
+    setActiveEntityId(null);
+    setEntityDraft(null);
+    setEntityDrawerError("");
+  }
+
+  function closeEntityDrawer() {
+    if (isEntityDrawerSubmitting) {
+      return;
+    }
+    resetEntityDrawer();
+  }
+
+  async function submitEntityDrawer() {
+    if (!activeEntityId || !entityDraft) {
+      return;
+    }
+    setIsEntityDrawerSubmitting(true);
+    setEntityDrawerError("");
+    try {
+      await updateEntity(activeEntityId, entityDraft);
+      resetEntityDrawer();
+    } catch (error: any) {
+      setEntityDrawerError(error?.message || "Failed to update entity");
+    } finally {
+      setIsEntityDrawerSubmitting(false);
+    }
+  }
+
+  function openEntityDeleteConfirmation(entity: { id: string; name: string }) {
+    setPendingEntityDelete(entity);
+    setEntityDeleteConfirmName("");
+    setEntityDeleteError("");
+    setIsEntityDeleteSubmitting(false);
+  }
+
+  function closeEntityDeleteConfirmation() {
+    if (isEntityDeleteSubmitting) {
+      return;
+    }
+    setPendingEntityDelete(null);
+    setEntityDeleteConfirmName("");
+    setEntityDeleteError("");
+  }
+
+  async function confirmEntityDelete() {
+    if (!pendingEntityDelete) {
+      return;
+    }
+    if (entityDeleteConfirmName !== pendingEntityDelete.name) {
+      setEntityDeleteError("Type the exact entity name to continue.");
+      return;
+    }
+    setIsEntityDeleteSubmitting(true);
+    setEntityDeleteError("");
+    try {
+      await deleteEntity(pendingEntityDelete.id);
+      closeEntityDeleteConfirmation();
+    } catch (error: any) {
+      setEntityDeleteError(error?.message || "Failed to delete entity");
+      setIsEntityDeleteSubmitting(false);
+    }
+  }
+
+  function openAccountDrawer(account: (typeof accounts)[number]) {
+    setActiveAccountId(account.id);
+    setAccountDrawerError("");
+    setAccountDeleteConfirmName("");
+    setDeletingAccountId(null);
+    setAccountDraft({
+      name: account.name,
+      entity_id: account.entity_id,
+      type: account.type,
+      currency_code: account.currency_code,
+    });
+  }
+
+  function resetAccountDrawer() {
+    setActiveAccountId(null);
+    setAccountDraft(null);
+    setAccountDrawerError("");
+    setAccountDeleteConfirmName("");
+    setDeletingAccountId(null);
+  }
+
+  function closeAccountDrawer() {
+    if (isAccountDrawerSubmitting) {
+      return;
+    }
+    resetAccountDrawer();
+  }
+
+  async function submitAccountDrawer() {
+    if (!activeAccountId || !accountDraft) {
+      return;
+    }
+    setIsAccountDrawerSubmitting(true);
+    setAccountDrawerError("");
+    try {
+      await updateAccount(activeAccountId, accountDraft);
+      await loadSettingsAccounts();
+      resetAccountDrawer();
+    } catch (error: any) {
+      setAccountDrawerError(error?.message || "Failed to update account");
+    } finally {
+      setIsAccountDrawerSubmitting(false);
+    }
+  }
+
+  async function deleteAccountFromDrawer() {
+    const account = settingsAccounts.find((item) => item.id === activeAccountId);
+    if (!account) {
+      return;
+    }
+    if (accountDeleteConfirmName !== account.name) {
+      setAccountDrawerError("Type the exact account name to continue.");
+      return;
+    }
+    setDeletingAccountId(account.id);
+    setAccountDrawerError("");
+    try {
+      await deleteAccount(account.id);
+      await loadSettingsAccounts();
+      resetAccountDrawer();
+    } catch (error: any) {
+      setAccountDrawerError(error?.message || "Failed to delete account");
+      setDeletingAccountId(null);
+    }
+  }
 
   async function submitBudget() {
     await createBudget({
@@ -406,6 +622,7 @@ export default function Settings() {
                       type: accountType,
                       currency_code: accountCurrency,
                     });
+                    await loadSettingsAccounts();
                     setAccountName("");
                   }}
                   className="mt-3 rounded-lg bg-accent px-4 py-2 text-sm font-medium text-white"
@@ -418,49 +635,156 @@ export default function Settings() {
             {entityAccounts.length === 0 ? (
               <EmptyState title="No entities found" body="Create an entity to get started." />
             ) : (
-              entityAccounts.map(({ entity, accounts: scopedAccounts }) => (
-                <Card key={entity.id} className="p-5">
-                  <div className="mb-4 flex items-start justify-between gap-3">
-                    <div>
-                      <h3 className="text-lg font-semibold text-text">{entity.name}</h3>
-                      <p className="text-sm capitalize text-text-secondary">{entity.type}</p>
-                    </div>
-                    <button
-                      onClick={() => deleteEntity(entity.id)}
-                      className="rounded-md bg-negative-light px-3 py-1.5 text-sm font-medium text-negative-dark"
-                    >
-                      Delete entity
-                    </button>
-                  </div>
-                  <div className="space-y-2">
-                    {scopedAccounts.length === 0 ? (
-                      <p className="text-sm text-text-secondary">No accounts yet.</p>
-                    ) : (
-                      scopedAccounts.map((account) => (
-                        <div key={account.id} className="flex items-center justify-between rounded-lg bg-bg-subtle px-4 py-3">
-                          <div>
-                            <p className="text-sm font-medium text-text">{account.name}</p>
-                            <p className="text-2xs text-text-secondary">
-                              {account.type} • {account.currency_code}
-                            </p>
-                          </div>
-                          <div className="flex items-center gap-3">
-                            <span className="text-sm font-semibold text-text">
-                              {formatCurrency(account.balance, account.currency_code)}
-                            </span>
-                            <button
-                              onClick={() => deleteAccount(account.id)}
-                              className="rounded-md bg-white px-3 py-1.5 text-sm font-medium text-negative-dark"
-                            >
-                              Delete
-                            </button>
-                          </div>
+              <>
+                {defaultAccountsError ? (
+                  <Card className="border border-negative/20 bg-negative-light p-4 text-sm text-negative-dark">
+                    {defaultAccountsError}
+                  </Card>
+                ) : null}
+                {isSettingsAccountsLoading ? (
+                  <Card className="p-4 text-sm text-text-secondary">
+                    Loading all entity accounts...
+                  </Card>
+                ) : null}
+                {entityAccounts.map(({ entity, accounts: scopedAccounts }) => {
+                  const entityDefaults = normalizeDefaultAccountPreferencesForEntity(
+                    settings,
+                    scopedAccounts,
+                    entity.id
+                  );
+                  const isSavingDefaults =
+                    defaultAccountsSubmittingEntityId === entity.id;
+                  const defaultExpenseId = String(
+                    entityDefaults.default_expense_account_id || ""
+                  );
+                  const defaultIncomeId = String(
+                    entityDefaults.default_income_account_id || ""
+                  );
+
+                  return (
+                    <Card key={entity.id} className="p-5">
+                      <div className="mb-4 flex items-start justify-between gap-3">
+                        <div>
+                          <h3 className="text-lg font-semibold text-text">{entity.name}</h3>
+                          <p className="text-sm capitalize text-text-secondary">{entity.type}</p>
                         </div>
-                      ))
-                    )}
-                  </div>
-                </Card>
-              ))
+                        <div className="flex items-center gap-2">
+                          <button
+                            onClick={() => openEntityDrawer(entity)}
+                            className="rounded-md bg-white px-3 py-1.5 text-sm font-medium text-text"
+                          >
+                            Edit Entity
+                          </button>
+                          <button
+                            onClick={() => openEntityDeleteConfirmation(entity)}
+                            className="rounded-md bg-negative-light px-3 py-1.5 text-sm font-medium text-negative-dark"
+                          >
+                            Delete entity
+                          </button>
+                        </div>
+                      </div>
+                      <div className="mb-4 grid gap-3 rounded-xl bg-bg-subtle p-4 md:grid-cols-2">
+                        <label className="block">
+                          <span className="mb-1.5 block text-xs font-semibold uppercase tracking-wide text-text-secondary">
+                            Default Expense Account
+                          </span>
+                          <select
+                            value={defaultExpenseId}
+                            disabled={isSavingDefaults || scopedAccounts.length === 0}
+                            onChange={(event) => {
+                              void updateEntityDefaultAccount(
+                                entity.id,
+                                "expense",
+                                event.target.value
+                              );
+                            }}
+                            className="w-full rounded-lg bg-white px-3 py-2.5 text-sm outline-none disabled:opacity-60"
+                          >
+                            {scopedAccounts.length === 0 ? (
+                              <option value="">No accounts available</option>
+                            ) : null}
+                            {scopedAccounts.map((account) => (
+                              <option key={`expense:${entity.id}:${account.id}`} value={String(account.id)}>
+                                {account.name} • {account.currency_code}
+                              </option>
+                            ))}
+                          </select>
+                        </label>
+                        <label className="block">
+                          <span className="mb-1.5 block text-xs font-semibold uppercase tracking-wide text-text-secondary">
+                            Default Income Account
+                          </span>
+                          <select
+                            value={defaultIncomeId}
+                            disabled={isSavingDefaults || scopedAccounts.length === 0}
+                            onChange={(event) => {
+                              void updateEntityDefaultAccount(
+                                entity.id,
+                                "income",
+                                event.target.value
+                              );
+                            }}
+                            className="w-full rounded-lg bg-white px-3 py-2.5 text-sm outline-none disabled:opacity-60"
+                          >
+                            {scopedAccounts.length === 0 ? (
+                              <option value="">No accounts available</option>
+                            ) : null}
+                            {scopedAccounts.map((account) => (
+                              <option key={`income:${entity.id}:${account.id}`} value={String(account.id)}>
+                                {account.name} • {account.currency_code}
+                              </option>
+                            ))}
+                          </select>
+                        </label>
+                        {isSavingDefaults ? (
+                          <p className="md:col-span-2 text-2xs text-text-secondary">
+                            Saving default accounts...
+                          </p>
+                        ) : null}
+                      </div>
+                      <div className="space-y-2">
+                        {scopedAccounts.length === 0 ? (
+                          <p className="text-sm text-text-secondary">No accounts yet.</p>
+                        ) : (
+                          scopedAccounts.map((account) => (
+                            <button
+                              key={account.id}
+                              type="button"
+                              onClick={() => openAccountDrawer(account)}
+                              className="flex w-full items-center justify-between rounded-lg bg-bg-subtle px-4 py-3 text-left transition hover:bg-white"
+                            >
+                              <div>
+                                <div className="flex flex-wrap items-center gap-2">
+                                  <p className="text-sm font-medium text-text">{account.name}</p>
+                                  {defaultExpenseId === String(account.id) ? (
+                                    <span className="rounded-full bg-accent-light px-2 py-0.5 text-2xs font-medium text-accent-dark">
+                                      Default expense
+                                    </span>
+                                  ) : null}
+                                  {defaultIncomeId === String(account.id) ? (
+                                    <span className="rounded-full bg-positive-light px-2 py-0.5 text-2xs font-medium text-positive-dark">
+                                      Default income
+                                    </span>
+                                  ) : null}
+                                </div>
+                                <p className="text-2xs text-text-secondary">
+                                  {account.type} • {account.currency_code}
+                                </p>
+                              </div>
+                              <div className="flex items-center gap-3">
+                                <span className="text-sm font-semibold text-text">
+                                  {formatCurrency(account.balance, account.currency_code)}
+                                </span>
+                                <i className="ri-arrow-right-s-line text-lg text-text-secondary" />
+                              </div>
+                            </button>
+                          ))
+                        )}
+                      </div>
+                    </Card>
+                  );
+                })}
+              </>
             )}
           </div>
         ) : null}
@@ -731,6 +1055,43 @@ export default function Settings() {
         onSubmit={submitIncomeCategoryDrawer}
         title="Edit Income Category"
       />
+
+      <SettingsEntityDrawer
+        draft={entityDraft}
+        error={entityDrawerError}
+        isSubmitting={isEntityDrawerSubmitting}
+        onClose={closeEntityDrawer}
+        onDraftChange={setEntityDraft}
+        onSubmit={submitEntityDrawer}
+      />
+
+      <SettingsAccountDrawer
+        accountName={
+          settingsAccounts.find((item) => item.id === activeAccountId)?.name || ""
+        }
+        draft={accountDraft}
+        error={accountDrawerError}
+        entities={entities}
+        deleteConfirmName={accountDeleteConfirmName}
+        deletingAccountId={deletingAccountId}
+        isSubmitting={isAccountDrawerSubmitting}
+        onClose={closeAccountDrawer}
+        onDelete={deleteAccountFromDrawer}
+        onDeleteConfirmNameChange={setAccountDeleteConfirmName}
+        onDraftChange={setAccountDraft}
+        onSubmit={submitAccountDrawer}
+      />
+
+      <DeleteConfirmationModal
+        confirmValue={entityDeleteConfirmName}
+        error={entityDeleteError}
+        isSubmitting={isEntityDeleteSubmitting}
+        itemLabel="entity"
+        itemName={pendingEntityDelete?.name || ""}
+        onClose={closeEntityDeleteConfirmation}
+        onConfirm={confirmEntityDelete}
+        onConfirmValueChange={setEntityDeleteConfirmName}
+      />
     </div>
   );
 }
@@ -975,5 +1336,412 @@ function CategoryBadgePreview({
       {category.icon ? <i className={`${category.icon} text-base`} /> : null}
       <span className="truncate">{label}</span>
     </span>
+  );
+}
+
+function SettingsEntityDrawer({
+  draft,
+  error,
+  isSubmitting,
+  onClose,
+  onDraftChange,
+  onSubmit,
+}: {
+  draft: EntityDraft | null;
+  error: string;
+  isSubmitting: boolean;
+  onClose: () => void;
+  onDraftChange: Dispatch<SetStateAction<EntityDraft | null>>;
+  onSubmit: () => Promise<void>;
+}) {
+  if (!draft) {
+    return null;
+  }
+
+  return (
+    <div
+      className="fixed inset-0 z-[80] flex justify-end bg-slate-950/30"
+      onClick={onClose}
+    >
+      <aside
+        className="h-screen w-full max-w-md overflow-y-auto border-l border-slate-200 bg-white p-5 shadow-2xl"
+        role="dialog"
+        aria-modal="true"
+        aria-label="Edit Entity"
+        onClick={(event) => event.stopPropagation()}
+      >
+        <div className="mb-4 flex items-center justify-between gap-3">
+          <h2 className="text-lg font-semibold text-text">Edit Entity</h2>
+          <button
+            type="button"
+            onClick={onClose}
+            disabled={isSubmitting}
+            className="rounded-md bg-bg-subtle px-3 py-1.5 text-sm font-medium text-text-secondary disabled:opacity-60"
+          >
+            Close
+          </button>
+        </div>
+
+        <form
+          onSubmit={async (event) => {
+            event.preventDefault();
+            await onSubmit();
+          }}
+          className="grid gap-4"
+        >
+          <label className="grid gap-1.5">
+            <span className="text-xs font-medium uppercase tracking-wide text-text-secondary">Name</span>
+            <input
+              type="text"
+              value={draft.name}
+              onChange={(event) =>
+                onDraftChange((prev) =>
+                  prev
+                    ? {
+                        ...prev,
+                        name: event.target.value,
+                      }
+                    : prev
+                )
+              }
+              required
+              className="w-full rounded-lg bg-bg-subtle px-3 py-2.5 text-sm text-text outline-none"
+            />
+          </label>
+
+          <label className="grid gap-1.5">
+            <span className="text-xs font-medium uppercase tracking-wide text-text-secondary">Type</span>
+            <select
+              value={draft.type}
+              onChange={(event) =>
+                onDraftChange((prev) =>
+                  prev
+                    ? {
+                        ...prev,
+                        type: event.target.value,
+                      }
+                    : prev
+                )
+              }
+              className="w-full rounded-lg bg-bg-subtle px-3 py-2.5 text-sm text-text outline-none"
+            >
+              {entityTypes.map((value) => (
+                <option key={value} value={value}>
+                  {value}
+                </option>
+              ))}
+            </select>
+          </label>
+
+          {error ? <p className="text-sm text-negative-dark">{error}</p> : null}
+
+          <div className="mt-2 flex items-center justify-end gap-2">
+            <button
+              type="submit"
+              disabled={isSubmitting}
+              className="rounded-md bg-accent px-3 py-1.5 text-sm font-medium text-white disabled:opacity-60"
+            >
+              {isSubmitting ? "Saving..." : "Save Changes"}
+            </button>
+          </div>
+        </form>
+      </aside>
+    </div>
+  );
+}
+
+function SettingsAccountDrawer({
+  accountName,
+  draft,
+  deleteConfirmName,
+  deletingAccountId,
+  entities,
+  error,
+  isSubmitting,
+  onClose,
+  onDelete,
+  onDeleteConfirmNameChange,
+  onDraftChange,
+  onSubmit,
+}: {
+  accountName: string;
+  draft: AccountDraft | null;
+  deleteConfirmName: string;
+  deletingAccountId: number | null;
+  entities: Array<{ id: string; name: string }>;
+  error: string;
+  isSubmitting: boolean;
+  onClose: () => void;
+  onDelete: () => Promise<void>;
+  onDeleteConfirmNameChange: (value: string) => void;
+  onDraftChange: Dispatch<SetStateAction<AccountDraft | null>>;
+  onSubmit: () => Promise<void>;
+}) {
+  if (!draft) {
+    return null;
+  }
+
+  return (
+    <div
+      className="fixed inset-0 z-[80] flex justify-end bg-slate-950/30"
+      onClick={onClose}
+    >
+      <aside
+        className="h-screen w-full max-w-md overflow-y-auto border-l border-slate-200 bg-white p-5 shadow-2xl"
+        role="dialog"
+        aria-modal="true"
+        aria-label="Edit Account"
+        onClick={(event) => event.stopPropagation()}
+      >
+        <div className="mb-4 flex items-center justify-between gap-3">
+          <h2 className="text-lg font-semibold text-text">Edit Account</h2>
+          <button
+            type="button"
+            onClick={onClose}
+            disabled={isSubmitting}
+            className="rounded-md bg-bg-subtle px-3 py-1.5 text-sm font-medium text-text-secondary disabled:opacity-60"
+          >
+            Close
+          </button>
+        </div>
+
+        <form
+          onSubmit={async (event) => {
+            event.preventDefault();
+            await onSubmit();
+          }}
+          className="grid gap-4"
+        >
+          <label className="grid gap-1.5">
+            <span className="text-xs font-medium uppercase tracking-wide text-text-secondary">Name</span>
+            <input
+              type="text"
+              value={draft.name}
+              onChange={(event) =>
+                onDraftChange((prev) =>
+                  prev
+                    ? {
+                        ...prev,
+                        name: event.target.value,
+                      }
+                    : prev
+                )
+              }
+              required
+              className="w-full rounded-lg bg-bg-subtle px-3 py-2.5 text-sm text-text outline-none"
+            />
+          </label>
+
+          <label className="grid gap-1.5">
+            <span className="text-xs font-medium uppercase tracking-wide text-text-secondary">Entity</span>
+            <select
+              value={draft.entity_id}
+              onChange={(event) =>
+                onDraftChange((prev) =>
+                  prev
+                    ? {
+                        ...prev,
+                        entity_id: event.target.value,
+                      }
+                    : prev
+                )
+              }
+              className="w-full rounded-lg bg-bg-subtle px-3 py-2.5 text-sm text-text outline-none"
+            >
+              {entities.map((entity) => (
+                <option key={entity.id} value={entity.id}>
+                  {entity.name}
+                </option>
+              ))}
+            </select>
+          </label>
+
+          <label className="grid gap-1.5">
+            <span className="text-xs font-medium uppercase tracking-wide text-text-secondary">Type</span>
+            <select
+              value={draft.type}
+              onChange={(event) =>
+                onDraftChange((prev) =>
+                  prev
+                    ? {
+                        ...prev,
+                        type: event.target.value,
+                      }
+                    : prev
+                )
+              }
+              className="w-full rounded-lg bg-bg-subtle px-3 py-2.5 text-sm text-text outline-none"
+            >
+              {accountTypes.map((value) => (
+                <option key={value} value={value}>
+                  {value}
+                </option>
+              ))}
+            </select>
+          </label>
+
+          <label className="grid gap-1.5">
+            <span className="text-xs font-medium uppercase tracking-wide text-text-secondary">Currency</span>
+            <select
+              value={draft.currency_code}
+              onChange={(event) =>
+                onDraftChange((prev) =>
+                  prev
+                    ? {
+                        ...prev,
+                        currency_code: event.target.value,
+                      }
+                    : prev
+                )
+              }
+              className="w-full rounded-lg bg-bg-subtle px-3 py-2.5 text-sm text-text outline-none"
+            >
+              {currencyOptions.map((value) => (
+                <option key={value} value={value}>
+                  {value}
+                </option>
+              ))}
+            </select>
+          </label>
+
+          {error ? <p className="text-sm text-negative-dark">{error}</p> : null}
+
+          <div className="rounded-xl border border-negative/20 bg-negative-light/40 p-4">
+            <p className="text-sm font-semibold text-negative-dark">Delete Account</p>
+            <p className="mt-1 text-sm text-text-secondary">
+              This action cannot be undone. Type the exact account name to enable deletion.
+            </p>
+            <label className="mt-3 grid gap-1.5">
+              <span className="text-xs font-medium uppercase tracking-wide text-text-secondary">
+                Confirm Account Name
+              </span>
+              <input
+                type="text"
+                value={deleteConfirmName}
+                onChange={(event) => onDeleteConfirmNameChange(event.target.value)}
+                placeholder={accountName}
+                className="w-full rounded-lg bg-white px-3 py-2.5 text-sm text-text outline-none"
+              />
+            </label>
+            <div className="mt-3 flex justify-end">
+              <button
+                type="button"
+                onClick={async () => {
+                  await onDelete();
+                }}
+                disabled={
+                  isSubmitting ||
+                  deletingAccountId !== null ||
+                  deleteConfirmName !== accountName
+                }
+                className="rounded-md bg-negative px-3 py-1.5 text-sm font-medium text-white disabled:opacity-60"
+              >
+                {deletingAccountId !== null ? "Deleting..." : "Delete Account"}
+              </button>
+            </div>
+          </div>
+
+          <div className="mt-2 flex items-center justify-end gap-2">
+            <button
+              type="submit"
+              disabled={isSubmitting}
+              className="rounded-md bg-accent px-3 py-1.5 text-sm font-medium text-white disabled:opacity-60"
+            >
+              {isSubmitting ? "Saving..." : "Save Changes"}
+            </button>
+          </div>
+        </form>
+      </aside>
+    </div>
+  );
+}
+
+function DeleteConfirmationModal({
+  confirmValue,
+  error,
+  isSubmitting,
+  itemLabel,
+  itemName,
+  onClose,
+  onConfirm,
+  onConfirmValueChange,
+}: {
+  confirmValue: string;
+  error: string;
+  isSubmitting: boolean;
+  itemLabel: string;
+  itemName: string;
+  onClose: () => void;
+  onConfirm: () => Promise<void>;
+  onConfirmValueChange: (value: string) => void;
+}) {
+  if (!itemName) {
+    return null;
+  }
+
+  return (
+    <div className="fixed inset-0 z-[90] flex items-center justify-center bg-slate-950/40 p-4">
+      <div className="w-full max-w-lg rounded-2xl bg-white p-6 shadow-2xl">
+        <div className="flex items-start justify-between gap-4">
+          <div>
+            <h3 className="text-lg font-semibold text-text">Delete {itemLabel}</h3>
+            <p className="mt-1 text-sm text-text-secondary">
+              This action cannot be undone. Type the exact {itemLabel} name to continue.
+            </p>
+          </div>
+          <button
+            type="button"
+            onClick={onClose}
+            disabled={isSubmitting}
+            className="rounded-md bg-bg-subtle px-3 py-1.5 text-sm font-medium text-text-secondary disabled:opacity-60"
+          >
+            Close
+          </button>
+        </div>
+
+        <div className="mt-4 rounded-xl border border-negative/20 bg-negative-light/40 p-4">
+          <p className="text-xs font-semibold uppercase tracking-wide text-text-secondary">
+            Exact Name Required
+          </p>
+          <p className="mt-1 text-base font-semibold text-negative-dark">{itemName}</p>
+        </div>
+
+        <label className="mt-4 grid gap-1.5">
+          <span className="text-xs font-medium uppercase tracking-wide text-text-secondary">
+            Confirm {itemLabel} name
+          </span>
+          <input
+            type="text"
+            value={confirmValue}
+            onChange={(event) => onConfirmValueChange(event.target.value)}
+            placeholder={itemName}
+            className="w-full rounded-lg bg-bg-subtle px-3 py-2.5 text-sm text-text outline-none"
+          />
+        </label>
+
+        {error ? <p className="mt-3 text-sm text-negative-dark">{error}</p> : null}
+
+        <div className="mt-5 flex items-center justify-end gap-2">
+          <button
+            type="button"
+            onClick={onClose}
+            disabled={isSubmitting}
+            className="rounded-md bg-bg-subtle px-3 py-1.5 text-sm font-medium text-text-secondary disabled:opacity-60"
+          >
+            Cancel
+          </button>
+          <button
+            type="button"
+            onClick={async () => {
+              await onConfirm();
+            }}
+            disabled={isSubmitting || confirmValue !== itemName}
+            className="rounded-md bg-negative px-3 py-1.5 text-sm font-medium text-white disabled:opacity-60"
+          >
+            {isSubmitting ? "Deleting..." : `Delete ${itemLabel}`}
+          </button>
+        </div>
+      </div>
+    </div>
   );
 }
