@@ -120,3 +120,77 @@ test("budget metrics ignore future impact for inactive budgets", () => {
   assert.equal(metrics.next_payment_date, null);
   assert.equal(metrics.remaining_payment_count, 0);
 });
+
+test("budget payload derives totals and cadence from itemized plans", () => {
+  const payload = normalizeBudgetPayload(
+    {
+      entity_id: "entity-1",
+      name: "Family Trip",
+      start_date: "2026-05-01",
+      target_date: "2026-07-15",
+      budget_items: [
+        { name: "Flights", cadence: "one_time", amount: "18000" },
+        { name: "Pocket Money", cadence: "monthly", amount: "5000" },
+      ],
+    },
+    { isValidDate }
+  );
+
+  assert.equal(payload.error, undefined);
+  assert.equal(payload.target_amount, 33000);
+  assert.equal(payload.payment_plan, "installment");
+  assert.equal(payload.payment_frequency, "monthly");
+  assert.equal(payload.payment_amount, 5000);
+  assert.equal(payload.payment_count, 3);
+  assert.deepEqual(payload.budget_items, [
+    { id: "item-1", name: "Flights", cadence: "one_time", amount: 18000, notes: null },
+    { id: "item-2", name: "Pocket Money", cadence: "monthly", amount: 5000, notes: null },
+  ]);
+});
+
+test("itemized budgets require a target date", () => {
+  const payload = normalizeBudgetPayload(
+    {
+      entity_id: "entity-1",
+      name: "Family Trip",
+      start_date: "2026-05-01",
+      budget_items: [{ name: "Flights", cadence: "one_time", amount: "18000" }],
+    },
+    { isValidDate }
+  );
+
+  assert.equal(payload.error, "Budget plans with items require a target date");
+});
+
+test("itemized budgets build one-time and monthly schedule metrics", () => {
+  const metrics = buildBudgetMetrics(
+    {
+      target_amount: 33000,
+      start_date: "2026-05-01",
+      target_date: "2026-07-15",
+      is_active: true,
+      budget_items_json: JSON.stringify([
+        { id: "item-1", name: "Flights", cadence: "one_time", amount: 18000 },
+        { id: "item-2", name: "Pocket Money", cadence: "monthly", amount: 5000 },
+      ]),
+    },
+    {
+      isValidDate,
+      todayISO: () => "2026-05-01",
+    }
+  );
+
+  assert.equal(metrics.today_impact, 5000);
+  assert.equal(metrics.weekly_impact, 5000);
+  assert.equal(metrics.monthly_impact, 5000);
+  assert.equal(metrics.one_time_total, 18000);
+  assert.equal(metrics.monthly_total, 5000);
+  assert.equal(metrics.item_count, 2);
+  assert.equal(metrics.final_payment_date, "2026-07-15");
+  assert.deepEqual(metrics.schedule_preview, [
+    { date: "2026-05-01", amount: 5000 },
+    { date: "2026-06-01", amount: 5000 },
+    { date: "2026-07-01", amount: 5000 },
+    { date: "2026-07-15", amount: 18000 },
+  ]);
+});

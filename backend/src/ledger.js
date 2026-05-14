@@ -599,10 +599,7 @@ async function getAccountBalanceCents(get, all, accountId) {
     `,
     [accountId, accountId, accountId, accountId, accountId, accountId, accountId, accountId]
   );
-  const ledgerBalanceCents = Number(row?.balance_cents ?? 0);
-  const legacyDeltaMap = await getLegacyEntityAccountDeltaMap({ get, all });
-  const legacyDeltaCents = Number(legacyDeltaMap.get(String(accountId)) || 0);
-  return ledgerBalanceCents + legacyDeltaCents;
+  return Number(row?.balance_cents ?? 0);
 }
 
 async function getAccountWithBalance(get, all, id) {
@@ -680,11 +677,9 @@ async function getAccountWithBalance(get, all, id) {
   if (!row) {
     return null;
   }
-  const legacyDeltaMap = await getLegacyEntityAccountDeltaMap({ get, all });
   return {
     ...row,
-    balance_cents:
-      Number(row?.balance_cents ?? 0) + Number(legacyDeltaMap.get(String(id)) || 0),
+    balance_cents: Number(row?.balance_cents ?? 0),
   };
 }
 
@@ -881,13 +876,10 @@ async function listAccountsWithBalances(all, get, { entityId = null } = {}) {
     `,
     params
   );
-  const legacyDeltaMap = await getLegacyEntityAccountDeltaMap({ get, all });
   return rows.map((row) =>
     serializeAccountRow({
       ...row,
-      balance_cents:
-        Number(row?.balance_cents ?? 0) +
-        Number(legacyDeltaMap.get(String(row?.id)) || 0),
+      balance_cents: Number(row?.balance_cents ?? 0),
     })
   );
 }

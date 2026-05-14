@@ -1640,29 +1640,117 @@ async function getMonthAccounts(monthKey, entityId = null) {
   if (!range) {
     throw new Error("Invalid month key");
   }
-  const incomeEntityClause = entityId ? "AND entity_id = ?" : "";
-  const expenseEntityClause = entityId ? "AND entity_id = ?" : "";
-  const incomeParams = entityId ? [range.endDate, entityId] : [range.endDate];
-  const expenseParams = entityId ? [range.endDate, entityId] : [range.endDate];
-  const [settings, incomeTotal, expenseTotal] = await Promise.all([
-    get("SELECT base_balance FROM settings WHERE id = 1"),
-    get(
-      `SELECT COALESCE(SUM(amount), 0) AS total FROM income WHERE COALESCE(is_transfer_bookkeeping, 0) = 0 AND received_date <= ? ${incomeEntityClause}`,
-      incomeParams
-    ),
-    get(
-      `SELECT COALESCE(SUM(amount), 0) AS total FROM expenses WHERE COALESCE(is_transfer_bookkeeping, 0) = 0 AND spent_at <= ? ${expenseEntityClause}`,
-      expenseParams
-    ),
-  ]);
+  const balanceDate = range.endDate;
+  const params = Array(8).fill(balanceDate);
+  if (entityId) {
+    params.push(entityId);
+  }
 
-  const effectiveBaseBalance = entityId ? 0 : Number(settings?.base_balance ?? 0);
-  const cashBalance =
-    effectiveBaseBalance +
-    Number(incomeTotal?.total ?? 0) -
-    Number(expenseTotal?.total ?? 0);
+  const accountRows = await all(
+    `
+    SELECT
+      a.id,
+      (
+        COALESCE(
+          (
+            SELECT SUM(t.amount_cents)
+            FROM transactions t
+            WHERE t.type IN ('income', 'initial_balance')
+              AND t.to_account_id = a.id
+              AND substr(t.created_at, 1, 10) <= ?
+          ),
+          0
+        )
+        + COALESCE(
+          (
+            SELECT SUM(ROUND(i.amount * 100))
+            FROM income i
+            WHERE COALESCE(i.is_transfer_bookkeeping, 0) = 0
+              AND i.to_account_id = a.id
+              AND i.received_date <= ?
+          ),
+          0
+        )
+        - COALESCE(
+          (
+            SELECT SUM(t.amount_cents)
+            FROM transactions t
+            WHERE t.type = 'expense'
+              AND t.from_account_id = a.id
+              AND substr(t.created_at, 1, 10) <= ?
+          ),
+          0
+        )
+        - COALESCE(
+          (
+            SELECT SUM(ROUND(e.amount * 100))
+            FROM expenses e
+            WHERE COALESCE(e.is_transfer_bookkeeping, 0) = 0
+              AND e.from_account_id = a.id
+              AND e.spent_at <= ?
+          ),
+          0
+        )
+        - COALESCE(
+          (
+            SELECT SUM(t.amount_cents)
+            FROM transactions t
+            WHERE t.type = 'transfer'
+              AND t.from_account_id = a.id
+              AND substr(t.created_at, 1, 10) <= ?
+          ),
+          0
+        )
+        + COALESCE(
+          (
+            SELECT SUM(t.amount_cents)
+            FROM transactions t
+            WHERE t.type = 'transfer'
+              AND t.to_account_id = a.id
+              AND substr(t.created_at, 1, 10) <= ?
+          ),
+          0
+        )
+        - COALESCE(
+          (
+            SELECT SUM(tr.amount_cents)
+            FROM transfers tr
+            WHERE tr.from_account_id = a.id
+              AND substr(tr.transfer_date, 1, 10) <= ?
+          ),
+          0
+        )
+        + COALESCE(
+          (
+            SELECT SUM(tr.amount_cents)
+            FROM transfers tr
+            WHERE tr.to_account_id = a.id
+              AND substr(tr.transfer_date, 1, 10) <= ?
+          ),
+          0
+        )
+      ) AS balance_cents
+    FROM accounts a
+    ${entityId ? "WHERE a.entity_id = ?" : ""}
+    ORDER BY a.created_at ASC, a.id ASC
+    `,
+    params
+  );
 
-  return [{ id: "cash", balance: cashBalance }];
+  const rows = accountRows.map((row) => ({
+    id: row.id,
+    balance: Number((Number(row?.balance_cents ?? 0) / 100).toFixed(2)),
+  }));
+
+  if (!entityId) {
+    const settings = await get("SELECT base_balance FROM settings WHERE id = 1");
+    const baseBalance = Number(settings?.base_balance ?? 0);
+    if (Math.abs(baseBalance) >= 0.0001) {
+      rows.push({ id: "base_balance", balance: baseBalance });
+    }
+  }
+
+  return rows;
 }
 
 async function getMonthDebtSnapshot(monthKey, entityId = null) {

@@ -1813,3 +1813,92 @@ test("monthly reports are filtered per entity", async () => {
   assertMoneyEqual(familyMonth.summary?.income, 111, "Family list income mismatch");
   assertMoneyEqual(businessMonth.summary?.income, 222, "Business list income mismatch");
 });
+
+test("monthly report account snapshots include transfer deductions on source accounts", async () => {
+  const monthKey = "2025-12";
+  const familyEntity = await createEntity({
+    name: randomName("report-transfer-family-entity"),
+    type: "family",
+  });
+  const businessEntity = await createEntity({
+    name: randomName("report-transfer-business-entity"),
+    type: "business",
+  });
+  const familyEntityId = familyEntity.id;
+  const businessEntityId = businessEntity.id;
+
+  const familySource = await createAccount({
+    name: randomName("report-transfer-family-source"),
+    type: "cash",
+    entityId: familyEntityId,
+    currencyCode: "PHP",
+  });
+  const businessDestination = await createAccount({
+    name: randomName("report-transfer-business-destination"),
+    type: "cash",
+    entityId: businessEntityId,
+    currencyCode: "PHP",
+  });
+
+  let response = await request("/income", {
+    method: "POST",
+    body: {
+      amount: 500,
+      source: "report-transfer-seed-income",
+      received_date: `${monthKey}-02`,
+      entity_id: familyEntityId,
+      to_account_id: familySource.id,
+    },
+  });
+  assert.equal(response.status, 201, JSON.stringify(response.data));
+
+  response = await request("/transfers", {
+    method: "POST",
+    body: {
+      from_account_id: familySource.id,
+      to_account_id: businessDestination.id,
+      amount: 200,
+      date: `${monthKey}-10`,
+      notes: "monthly report transfer",
+    },
+  });
+  assert.equal(response.status, 201, JSON.stringify(response.data));
+
+  response = await request(
+    `/monthly-reports/generate?entity_id=${encodeURIComponent(familyEntityId)}`,
+    {
+      method: "POST",
+      body: { month_key: monthKey },
+    }
+  );
+  assert.equal(response.status, 201, JSON.stringify(response.data));
+
+  response = await request(
+    `/monthly-reports/generate?entity_id=${encodeURIComponent(businessEntityId)}`,
+    {
+      method: "POST",
+      body: { month_key: monthKey },
+    }
+  );
+  assert.equal(response.status, 201, JSON.stringify(response.data));
+
+  const familyDetail = await request(
+    `/monthly-reports/${monthKey}?entity_id=${encodeURIComponent(familyEntityId)}`
+  );
+  const businessDetail = await request(
+    `/monthly-reports/${monthKey}?entity_id=${encodeURIComponent(businessEntityId)}`
+  );
+  assert.equal(familyDetail.status, 200, JSON.stringify(familyDetail.data));
+  assert.equal(businessDetail.status, 200, JSON.stringify(businessDetail.data));
+
+  assertMoneyEqual(
+    familyDetail.data?.report?.buffer?.current,
+    300,
+    "Family monthly report buffer should reflect the transfer deduction"
+  );
+  assertMoneyEqual(
+    businessDetail.data?.report?.buffer?.current,
+    200,
+    "Business monthly report buffer should reflect the transfer inflow"
+  );
+});

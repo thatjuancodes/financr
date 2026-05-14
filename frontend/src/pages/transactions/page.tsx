@@ -10,7 +10,7 @@ import DebtStatementsView from "@/pages/transactions/components/DebtStatementsVi
 import type { CategoryRecord } from "@/types/finance";
 import { buildDebtCycleMonthsFromData } from "@/utils/appState";
 import {
-  createTransferDraft as createDefaultTransferDraft,
+  defaultAccountSelection,
   normalizeDefaultAccountPreferencesForEntity,
 } from "@/utils/accounts";
 import { buildCategoryBadgeStyle, resolveCategoryColor } from "@/utils/categoryColors";
@@ -84,10 +84,12 @@ type TransferDraft = {
   date: string;
   expense_category_id: string;
   from_account_id: string;
+  from_entity_id: string;
   income_category_id: string;
   mirror_as_income_expense: boolean;
   notes: string;
   to_account_id: string;
+  to_entity_id: string;
   transfer_fee_amount: string;
 };
 
@@ -121,6 +123,14 @@ type EditTarget =
       kind: "transaction" | "transfer";
       id: string;
     };
+
+type AccountOptionRecord = {
+  id: number;
+  name: string;
+  entity_id: string;
+  entity_name: string;
+  currency_code: string;
+};
 
 export default function Transactions() {
   const {
@@ -179,6 +189,7 @@ export default function Transactions() {
   const [genericEditTarget, setGenericEditTarget] = useState<EditTarget | null>(null);
   const [genericEditError, setGenericEditError] = useState("");
   const [isGenericEditSubmitting, setIsGenericEditSubmitting] = useState(false);
+  const [transferAccounts, setTransferAccounts] = useState<AccountOptionRecord[]>(accounts);
   const categoryMenuRef = useRef<HTMLDivElement | null>(null);
   const accountMenuRef = useRef<HTMLDivElement | null>(null);
   const monthMenuRef = useRef<HTMLDivElement | null>(null);
@@ -391,6 +402,38 @@ export default function Transactions() {
   }, [accountFilterOptions, selectedAccountId]);
 
   useEffect(() => {
+    let isActive = true;
+
+    if (selectedEntityId === ALL_ENTITIES_ID) {
+      setTransferAccounts(accounts);
+      return () => {
+        isActive = false;
+      };
+    }
+
+    async function loadTransferAccounts() {
+      try {
+        const rows = await api.getAccounts();
+        if (!isActive) {
+          return;
+        }
+        setTransferAccounts(Array.isArray(rows) ? rows : []);
+      } catch {
+        if (!isActive) {
+          return;
+        }
+        setTransferAccounts(accounts);
+      }
+    }
+
+    void loadTransferAccounts();
+
+    return () => {
+      isActive = false;
+    };
+  }, [accounts, selectedEntityId]);
+
+  useEffect(() => {
     function handlePointerDown(event: MouseEvent) {
       if (!categoryMenuRef.current?.contains(event.target as Node)) {
         setIsCategoryMenuOpen(false);
@@ -468,7 +511,7 @@ export default function Transactions() {
         defaultAccountPreferences.default_income_account_id
       )
     );
-    setTransferDraft(createEmptyTransferDraft(accounts));
+    setTransferDraft(createEmptyTransferDraft(transferFormAccounts, defaultEntityId));
     setDebtDraft(createEmptyDebtDraft(defaultEntityId));
   }
 
@@ -668,6 +711,7 @@ export default function Transactions() {
             record.from_account_id === null || record.from_account_id === undefined
               ? ""
               : String(record.from_account_id),
+          from_entity_id: String(record.from_entity_id || ""),
           income_category_id:
             record.income_category_id === null || record.income_category_id === undefined
               ? ""
@@ -678,6 +722,7 @@ export default function Transactions() {
             record.to_account_id === null || record.to_account_id === undefined
               ? ""
               : String(record.to_account_id),
+          to_entity_id: String(record.to_entity_id || ""),
           transfer_fee_amount: String(record.transfer_fee_amount ?? ""),
         });
         setGenericEditError("");
@@ -1005,33 +1050,56 @@ export default function Transactions() {
     () => accounts.find((account) => String(account.id) === incomeDraft.to_account_id) || null,
     [accounts, incomeDraft.to_account_id]
   );
+  const transferFormAccounts = useMemo(
+    () =>
+      selectedEntityId === ALL_ENTITIES_ID
+        ? accounts
+        : transferAccounts.length > 0
+          ? transferAccounts
+          : accounts,
+    [accounts, selectedEntityId, transferAccounts]
+  );
   const selectedTransferFromAccount = useMemo(
-    () => accounts.find((account) => String(account.id) === transferDraft.from_account_id) || null,
-    [accounts, transferDraft.from_account_id]
+    () =>
+      transferFormAccounts.find(
+        (account) => String(account.id) === transferDraft.from_account_id
+      ) || null,
+    [transferDraft.from_account_id, transferFormAccounts]
   );
   const selectedTransferToAccount = useMemo(
-    () => accounts.find((account) => String(account.id) === transferDraft.to_account_id) || null,
-    [accounts, transferDraft.to_account_id]
+    () =>
+      transferFormAccounts.find(
+        (account) => String(account.id) === transferDraft.to_account_id
+      ) || null,
+    [transferDraft.to_account_id, transferFormAccounts]
   );
   const selectedEditTransferFromAccount = useMemo(
     () =>
-      accounts.find((account) => String(account.id) === transferEditDraft.from_account_id) || null,
-    [accounts, transferEditDraft.from_account_id]
+      transferFormAccounts.find(
+        (account) => String(account.id) === transferEditDraft.from_account_id
+      ) || null,
+    [transferEditDraft.from_account_id, transferFormAccounts]
   );
   const selectedEditTransferToAccount = useMemo(
     () =>
-      accounts.find((account) => String(account.id) === transferEditDraft.to_account_id) || null,
-    [accounts, transferEditDraft.to_account_id]
+      transferFormAccounts.find(
+        (account) => String(account.id) === transferEditDraft.to_account_id
+      ) || null,
+    [transferEditDraft.to_account_id, transferFormAccounts]
   );
   const transferTargetAccounts = useMemo(
     () =>
-      accounts.filter((account) => String(account.id) !== transferDraft.from_account_id),
-    [accounts, transferDraft.from_account_id]
+      transferFormAccounts.filter(
+        (account) => String(account.id) !== transferDraft.from_account_id
+      ),
+    [transferDraft.from_account_id, transferFormAccounts]
   );
   const transferEditTargetAccounts = useMemo(
     () =>
-      accounts.filter((account) => String(account.id) !== transferEditDraft.from_account_id),
-    [accounts, transferEditDraft.from_account_id]
+      transferFormAccounts.filter(
+        (account) => String(account.id) !== transferEditDraft.from_account_id
+      ),
+    [transferEditDraft.from_account_id, transferFormAccounts]
   );
   const isTransferCrossEntity =
     Boolean(selectedTransferFromAccount && selectedTransferToAccount) &&
@@ -1734,6 +1802,7 @@ export default function Transactions() {
         onTransferDraftChange={setTransferDraft}
         onTypeChange={handleDrawerTypeChange}
         activeType={activeType}
+        transferAccounts={transferFormAccounts}
         transferDraft={transferDraft}
         transferTargetAccounts={transferTargetAccounts}
       />
@@ -1751,6 +1820,7 @@ export default function Transactions() {
         onTransferDraftChange={setTransferEditDraft}
         target={genericEditTarget}
         transactionDraft={genericTransactionDraft}
+        transferAccounts={transferFormAccounts}
         transferDraft={transferEditDraft}
         transferTargetAccounts={transferEditTargetAccounts}
       />
@@ -1958,10 +2028,11 @@ function TransactionCreateDrawer({
   onSubmit,
   onTransferDraftChange,
   onTypeChange,
+  transferAccounts,
   transferDraft,
   transferTargetAccounts,
 }: {
-  accounts: Array<{ id: number; name: string; entity_id: string; entity_name: string; currency_code: string }>;
+  accounts: AccountOptionRecord[];
   activeType: FilterType;
   categories: CategoryRecord[];
   debtDraft: DebtDraft;
@@ -1985,8 +2056,9 @@ function TransactionCreateDrawer({
   onSubmit: () => Promise<void>;
   onTransferDraftChange: (value: TransferDraft | ((current: TransferDraft) => TransferDraft)) => void;
   onTypeChange: (value: DrawerTransactionType) => void;
+  transferAccounts: AccountOptionRecord[];
   transferDraft: TransferDraft;
-  transferTargetAccounts: Array<{ id: number; name: string; entity_id: string; entity_name: string; currency_code: string }>;
+  transferTargetAccounts: AccountOptionRecord[];
 }) {
   const [shouldRender, setShouldRender] = useState(isOpen);
   const [isVisible, setIsVisible] = useState(false);
@@ -2010,6 +2082,18 @@ function TransactionCreateDrawer({
       window.clearTimeout(timeoutId);
     };
   }, [isOpen]);
+
+  const transferFromAccounts = useMemo(
+    () => filterAccountsByEntity(transferAccounts, transferDraft.from_entity_id),
+    [transferAccounts, transferDraft.from_entity_id]
+  );
+  const transferToAccounts = useMemo(
+    () =>
+      filterAccountsByEntity(transferAccounts, transferDraft.to_entity_id).filter(
+        (account) => String(account.id) !== transferDraft.from_account_id
+      ),
+    [transferAccounts, transferDraft.from_account_id, transferDraft.to_entity_id]
+  );
 
   if (!shouldRender) {
     return null;
@@ -2253,28 +2337,111 @@ function TransactionCreateDrawer({
           {drawerTransactionType === "transfer" ? (
             <>
               <FormSelect
+                label="From Entity"
+                value={transferDraft.from_entity_id}
+                onChange={(value) =>
+                  onTransferDraftChange((current) => {
+                    const nextFromAccounts = filterAccountsByEntity(transferAccounts, value);
+                    const nextToEntityId = current.to_entity_id || value;
+                    const nextFromAccountId = nextFromAccounts.some(
+                      (account) => String(account.id) === String(current.from_account_id)
+                    )
+                      ? current.from_account_id
+                      : getDefaultTransferAccountId(nextFromAccounts, "bank");
+                    const nextToAccounts = filterAccountsByEntity(
+                      transferAccounts,
+                      nextToEntityId
+                    );
+                    const nextToAccountId = nextToAccounts.some(
+                      (account) =>
+                        String(account.id) === String(current.to_account_id) &&
+                        String(account.id) !== String(nextFromAccountId)
+                    )
+                      ? current.to_account_id
+                      : getDefaultTransferAccountId(nextToAccounts, "cash", nextFromAccountId);
+                    return {
+                      ...current,
+                      from_account_id: nextFromAccountId,
+                      from_entity_id: value,
+                      to_account_id: nextToAccountId,
+                      to_entity_id: nextToEntityId,
+                    };
+                  })
+                }
+                options={entities.map((entity) => ({ label: entity.name, value: entity.id }))}
+              />
+              <FormSelect
                 label="From Account"
                 value={transferDraft.from_account_id}
                 onChange={(value) =>
-                  onTransferDraftChange((current) => ({ ...current, from_account_id: value }))
+                  onTransferDraftChange((current) => {
+                    const nextToAccounts = filterAccountsByEntity(
+                      transferAccounts,
+                      current.to_entity_id
+                    );
+                    const nextToAccountId =
+                      String(current.to_account_id) === String(value)
+                        ? getDefaultTransferAccountId(nextToAccounts, "cash", value)
+                        : current.to_account_id;
+                    return {
+                      ...current,
+                      from_account_id: value,
+                      from_entity_id:
+                        resolveEntityIdFromAccountId(transferAccounts, value) ||
+                        current.from_entity_id,
+                      to_account_id: nextToAccountId,
+                    };
+                  })
                 }
                 options={[
                   { label: "Select account", value: "" },
-                  ...accounts.map((account) => ({
+                  ...transferFromAccounts.map((account) => ({
                     label: formatAccountOptionLabel(account),
                     value: String(account.id),
                   })),
                 ]}
               />
               <FormSelect
+                label="To Entity"
+                value={transferDraft.to_entity_id}
+                onChange={(value) =>
+                  onTransferDraftChange((current) => {
+                    const nextToAccounts = filterAccountsByEntity(transferAccounts, value);
+                    const nextToAccountId = nextToAccounts.some(
+                      (account) =>
+                        String(account.id) === String(current.to_account_id) &&
+                        String(account.id) !== String(current.from_account_id)
+                    )
+                      ? current.to_account_id
+                      : getDefaultTransferAccountId(
+                          nextToAccounts,
+                          "cash",
+                          current.from_account_id
+                        );
+                    return {
+                      ...current,
+                      to_account_id: nextToAccountId,
+                      to_entity_id: value,
+                    };
+                  })
+                }
+                options={entities.map((entity) => ({ label: entity.name, value: entity.id }))}
+              />
+              <FormSelect
                 label="To Account"
                 value={transferDraft.to_account_id}
                 onChange={(value) =>
-                  onTransferDraftChange((current) => ({ ...current, to_account_id: value }))
+                  onTransferDraftChange((current) => ({
+                    ...current,
+                    to_account_id: value,
+                    to_entity_id:
+                      resolveEntityIdFromAccountId(transferAccounts, value) ||
+                      current.to_entity_id,
+                  }))
                 }
                 options={[
                   { label: "Select account", value: "" },
-                  ...transferTargetAccounts.map((account) => ({
+                  ...transferToAccounts.map((account) => ({
                     label: formatAccountOptionLabel(account),
                     value: String(account.id),
                   })),
@@ -2486,11 +2653,12 @@ function GenericEditDrawer({
   onSubmit,
   onTransferDraftChange,
   target,
+  transferAccounts,
   transactionDraft,
   transferDraft,
   transferTargetAccounts,
 }: {
-  accounts: Array<{ id: number; name: string; entity_id: string; entity_name: string; currency_code: string }>;
+  accounts: AccountOptionRecord[];
   categories: CategoryRecord[];
   error: string;
   incomeCategories: CategoryRecord[];
@@ -2506,9 +2674,10 @@ function GenericEditDrawer({
   onSubmit: () => Promise<void>;
   onTransferDraftChange: (value: TransferDraft | ((current: TransferDraft) => TransferDraft)) => void;
   target: EditTarget | null;
+  transferAccounts: AccountOptionRecord[];
   transactionDraft: GenericTransactionDraft;
   transferDraft: TransferDraft;
-  transferTargetAccounts: Array<{ id: number; name: string; entity_id: string; entity_name: string; currency_code: string }>;
+  transferTargetAccounts: AccountOptionRecord[];
 }) {
   const [shouldRender, setShouldRender] = useState(isOpen);
   const [isVisible, setIsVisible] = useState(false);
@@ -2532,6 +2701,18 @@ function GenericEditDrawer({
       window.clearTimeout(timeoutId);
     };
   }, [isOpen]);
+
+  const transferFromAccounts = useMemo(
+    () => filterAccountsByEntity(transferAccounts, transferDraft.from_entity_id),
+    [transferAccounts, transferDraft.from_entity_id]
+  );
+  const transferToAccounts = useMemo(
+    () =>
+      filterAccountsByEntity(transferAccounts, transferDraft.to_entity_id).filter(
+        (account) => String(account.id) !== transferDraft.from_account_id
+      ),
+    [transferAccounts, transferDraft.from_account_id, transferDraft.to_entity_id]
+  );
 
   if (!shouldRender || !target) {
     return null;
@@ -2650,7 +2831,10 @@ function GenericEditDrawer({
                           : "Select account",
                       value: "",
                     },
-                    ...accounts.map((account) => ({
+                    ...(transactionDraft.type === "transfer"
+                      ? transferAccounts
+                      : accounts
+                    ).map((account) => ({
                       label: formatAccountOptionLabel(account),
                       value: String(account.id),
                     })),
@@ -2675,7 +2859,9 @@ function GenericEditDrawer({
                           : "Select account",
                       value: "",
                     },
-                    ...accounts
+                    ...(transactionDraft.type === "transfer"
+                      ? transferAccounts
+                      : accounts)
                       .filter(
                         (account) =>
                           transactionDraft.type !== "transfer" ||
@@ -2702,28 +2888,119 @@ function GenericEditDrawer({
           ) : (
             <>
               <FormSelect
+                label="From Entity"
+                value={transferDraft.from_entity_id}
+                onChange={(value) =>
+                  onTransferDraftChange((current) => {
+                    const nextFromAccounts = filterAccountsByEntity(transferAccounts, value);
+                    const nextToEntityId = current.to_entity_id || value;
+                    const nextFromAccountId = nextFromAccounts.some(
+                      (account) => String(account.id) === String(current.from_account_id)
+                    )
+                      ? current.from_account_id
+                      : getDefaultTransferAccountId(nextFromAccounts, "bank");
+                    const nextToAccounts = filterAccountsByEntity(
+                      transferAccounts,
+                      nextToEntityId
+                    );
+                    const nextToAccountId = nextToAccounts.some(
+                      (account) =>
+                        String(account.id) === String(current.to_account_id) &&
+                        String(account.id) !== String(nextFromAccountId)
+                    )
+                      ? current.to_account_id
+                      : getDefaultTransferAccountId(nextToAccounts, "cash", nextFromAccountId);
+                    return {
+                      ...current,
+                      from_account_id: nextFromAccountId,
+                      from_entity_id: value,
+                      to_account_id: nextToAccountId,
+                      to_entity_id: nextToEntityId,
+                    };
+                  })
+                }
+                options={Array.from(
+                  new Map(
+                    transferAccounts.map((account) => [account.entity_id, account.entity_name])
+                  ).entries()
+                ).map(([value, label]) => ({ label, value }))}
+              />
+              <FormSelect
                 label="From Account"
                 value={transferDraft.from_account_id}
                 onChange={(value) =>
-                  onTransferDraftChange((current) => ({ ...current, from_account_id: value }))
+                  onTransferDraftChange((current) => {
+                    const nextToAccounts = filterAccountsByEntity(
+                      transferAccounts,
+                      current.to_entity_id
+                    );
+                    const nextToAccountId =
+                      String(current.to_account_id) === String(value)
+                        ? getDefaultTransferAccountId(nextToAccounts, "cash", value)
+                        : current.to_account_id;
+                    return {
+                      ...current,
+                      from_account_id: value,
+                      from_entity_id:
+                        resolveEntityIdFromAccountId(transferAccounts, value) ||
+                        current.from_entity_id,
+                      to_account_id: nextToAccountId,
+                    };
+                  })
                 }
                 options={[
                   { label: "Select account", value: "" },
-                  ...accounts.map((account) => ({
+                  ...transferFromAccounts.map((account) => ({
                     label: formatAccountOptionLabel(account),
                     value: String(account.id),
                   })),
                 ]}
               />
               <FormSelect
+                label="To Entity"
+                value={transferDraft.to_entity_id}
+                onChange={(value) =>
+                  onTransferDraftChange((current) => {
+                    const nextToAccounts = filterAccountsByEntity(transferAccounts, value);
+                    const nextToAccountId = nextToAccounts.some(
+                      (account) =>
+                        String(account.id) === String(current.to_account_id) &&
+                        String(account.id) !== String(current.from_account_id)
+                    )
+                      ? current.to_account_id
+                      : getDefaultTransferAccountId(
+                          nextToAccounts,
+                          "cash",
+                          current.from_account_id
+                        );
+                    return {
+                      ...current,
+                      to_account_id: nextToAccountId,
+                      to_entity_id: value,
+                    };
+                  })
+                }
+                options={Array.from(
+                  new Map(
+                    transferAccounts.map((account) => [account.entity_id, account.entity_name])
+                  ).entries()
+                ).map(([value, label]) => ({ label, value }))}
+              />
+              <FormSelect
                 label="To Account"
                 value={transferDraft.to_account_id}
                 onChange={(value) =>
-                  onTransferDraftChange((current) => ({ ...current, to_account_id: value }))
+                  onTransferDraftChange((current) => ({
+                    ...current,
+                    to_account_id: value,
+                    to_entity_id:
+                      resolveEntityIdFromAccountId(transferAccounts, value) ||
+                      current.to_entity_id,
+                  }))
                 }
                 options={[
                   { label: "Select account", value: "" },
-                  ...transferTargetAccounts.map((account) => ({
+                  ...transferToAccounts.map((account) => ({
                     label: formatAccountOptionLabel(account),
                     value: String(account.id),
                   })),
@@ -3027,16 +3304,58 @@ function createEmptyIncomeDraft(
   };
 }
 
+function filterAccountsByEntity(accounts: AccountOptionRecord[], entityId: string) {
+  const normalizedEntityId = String(entityId || "").trim();
+  if (!normalizedEntityId) {
+    return [];
+  }
+  return accounts.filter(
+    (account) => String(account.entity_id || "").trim() === normalizedEntityId
+  );
+}
+
+function getDefaultTransferAccountId(
+  accounts: AccountOptionRecord[],
+  preferredType: "bank" | "cash" = "bank",
+  excludedAccountId = ""
+) {
+  const filteredAccounts = accounts.filter(
+    (account) => String(account.id) !== String(excludedAccountId || "")
+  );
+  return String(defaultAccountSelection(filteredAccounts, preferredType) || "");
+}
+
+function resolveEntityIdFromAccountId(
+  accounts: AccountOptionRecord[],
+  accountId: string
+) {
+  return (
+    accounts.find((account) => String(account.id) === String(accountId || ""))?.entity_id || ""
+  );
+}
+
 function createEmptyTransferDraft(
-  accounts: Array<{
-    id: number;
-    name: string;
-    entity_id: string;
-    entity_name: string;
-    currency_code: string;
-  }>
+  accounts: AccountOptionRecord[],
+  defaultEntityId = ""
 ): TransferDraft {
-  return createDefaultTransferDraft(accounts) as TransferDraft;
+  const preferredEntityId =
+    String(defaultEntityId || "").trim() || String(accounts[0]?.entity_id || "").trim();
+  const fromAccounts = filterAccountsByEntity(accounts, preferredEntityId);
+  const fromAccountId = getDefaultTransferAccountId(fromAccounts, "bank");
+  const toAccountId = getDefaultTransferAccountId(fromAccounts, "cash", fromAccountId);
+  return {
+    amount: "",
+    date: getTodayDateInputValue(),
+    expense_category_id: "",
+    from_account_id: fromAccountId,
+    from_entity_id: preferredEntityId,
+    income_category_id: "",
+    mirror_as_income_expense: true,
+    notes: "",
+    to_account_id: toAccountId,
+    to_entity_id: preferredEntityId,
+    transfer_fee_amount: "",
+  };
 }
 
 function createEmptyDebtDraft(entityId: string): DebtDraft {

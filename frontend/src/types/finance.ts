@@ -131,6 +131,14 @@ export interface CategoryRecord {
   icon?: string | null;
 }
 
+export interface BudgetItemRecord {
+  id: string;
+  name: string;
+  cadence: "one_time" | "monthly";
+  amount: number;
+  notes?: string | null;
+}
+
 export interface BudgetRecord {
   id: number;
   entity_id: string;
@@ -146,9 +154,13 @@ export interface BudgetRecord {
   target_date?: string | null;
   notes?: string | null;
   is_active: boolean;
+  budget_items: BudgetItemRecord[];
   today_impact: number;
   weekly_impact: number;
   monthly_impact: number;
+  one_time_total: number;
+  monthly_total: number;
+  item_count: number;
   elapsed_amount: number;
   remaining_amount: number;
   completed_payment_count: number;

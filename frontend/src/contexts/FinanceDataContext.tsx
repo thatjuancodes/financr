@@ -79,6 +79,7 @@ type FinanceContextValue = {
   updateIncomeCategory: (id: number, payload: { name?: string; color?: string | null; icon?: string | null }) => Promise<void>;
   deleteIncomeCategory: (id: number) => Promise<void>;
   createBudget: (payload: Record<string, unknown>) => Promise<void>;
+  updateBudget: (id: number, payload: Record<string, unknown>) => Promise<void>;
   deleteBudget: (id: number) => Promise<void>;
   setDefaultAccounts: (payload: Record<string, unknown>) => Promise<void>;
   setCurrency: (code: string) => Promise<void>;
@@ -287,6 +288,8 @@ export function FinanceDataProvider({ children }: { children: React.ReactNode })
     deleteIncomeCategory: (id) =>
       runMutation(() => api.deleteIncomeCategory(id), "Income category deleted"),
     createBudget: (payload) => runMutation(() => api.addBudget(payload), "Budget created"),
+    updateBudget: (id, payload) =>
+      runMutation(() => api.updateBudget(id, payload), "Budget updated"),
     deleteBudget: (id) => runMutation(() => api.deleteBudget(id), "Budget deleted"),
     setDefaultAccounts: (payload) =>
       runMutation(() => api.setDefaultAccounts(payload), "Default accounts updated"),

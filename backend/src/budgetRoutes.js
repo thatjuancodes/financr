@@ -1,5 +1,6 @@
 const BUDGET_PAYMENT_PLANS = new Set(["one_time", "installment"]);
 const BUDGET_PAYMENT_FREQUENCIES = new Set(["once", "weekly", "monthly", "yearly"]);
+const BUDGET_ITEM_CADENCES = new Set(["one_time", "monthly"]);
 
 function roundMoney(value) {
   const numeric = Number(value ?? 0);
@@ -68,6 +69,153 @@ function normalizeOptionalText(value) {
   return normalized || null;
 }
 
+function parseBudgetItems(value) {
+  if (Array.isArray(value)) {
+    return value;
+  }
+  if (typeof value !== "string") {
+    return [];
+  }
+  try {
+    const parsed = JSON.parse(value);
+    return Array.isArray(parsed) ? parsed : [];
+  } catch (_error) {
+    return [];
+  }
+}
+
+function normalizeBudgetItems(items) {
+  if (!Array.isArray(items)) {
+    return { error: "Budget items must be an array" };
+  }
+
+  const normalizedItems = items.map((item, index) => {
+    const name =
+      typeof item?.name === "string"
+        ? item.name.trim()
+        : "";
+    const cadence =
+      typeof item?.cadence === "string"
+        ? item.cadence.trim().toLowerCase()
+        : "";
+    const amount = Number(item?.amount);
+    const notes = normalizeOptionalText(item?.notes);
+    const id =
+      typeof item?.id === "string" && item.id.trim()
+        ? item.id.trim()
+        : `item-${index + 1}`;
+
+    if (!name) {
+      return { error: "Each budget item needs a name" };
+    }
+    if (!BUDGET_ITEM_CADENCES.has(cadence)) {
+      return { error: "Budget items must be one_time or monthly" };
+    }
+    if (!Number.isFinite(amount) || amount <= 0) {
+      return { error: "Each budget item needs a valid amount" };
+    }
+
+    return {
+      id,
+      name,
+      cadence,
+      amount: roundMoney(amount),
+      notes,
+    };
+  });
+
+  const invalidItem = normalizedItems.find((item) => item?.error);
+  if (invalidItem?.error) {
+    return { error: invalidItem.error };
+  }
+
+  return { items: normalizedItems };
+}
+
+function summarizeBudgetItems(items) {
+  return items.reduce(
+    (summary, item) => {
+      const amount = roundMoney(item?.amount);
+      if (item?.cadence === "monthly") {
+        summary.monthly_total = roundMoney(summary.monthly_total + amount);
+      } else {
+        summary.one_time_total = roundMoney(summary.one_time_total + amount);
+      }
+      summary.item_count += 1;
+      return summary;
+    },
+    {
+      one_time_total: 0,
+      monthly_total: 0,
+      item_count: 0,
+    }
+  );
+}
+
+function addScheduleEntry(scheduleMap, date, amount) {
+  const currentAmount = Number(scheduleMap.get(date) ?? 0);
+  scheduleMap.set(date, roundMoney(currentAmount + Number(amount ?? 0)));
+}
+
+function buildItemizedBudgetSchedule(
+  budgetItems,
+  { startDate, targetDate, isValidDate }
+) {
+  if (!Array.isArray(budgetItems) || budgetItems.length === 0) {
+    return [];
+  }
+  if (!isValidDate(startDate)) {
+    return [];
+  }
+  const executionDate = targetDate || startDate;
+  if (!isValidDate(executionDate)) {
+    return [];
+  }
+
+  const scheduleMap = new Map();
+
+  budgetItems.forEach((item) => {
+    if (item.cadence === "monthly") {
+      let currentDate = startDate;
+      while (currentDate <= executionDate) {
+        addScheduleEntry(scheduleMap, currentDate, item.amount);
+        const nextDate = advanceBudgetDate(currentDate, "monthly", isValidDate);
+        if (nextDate <= currentDate) {
+          break;
+        }
+        currentDate = nextDate;
+      }
+      return;
+    }
+
+    addScheduleEntry(scheduleMap, executionDate, item.amount);
+  });
+
+  return Array.from(scheduleMap.entries())
+    .sort(([leftDate], [rightDate]) => leftDate.localeCompare(rightDate))
+    .map(([date, amount]) => ({
+      date,
+      amount: roundMoney(amount),
+    }));
+}
+
+function countMonthlyBudgetOccurrences(startDate, targetDate, isValidDate) {
+  if (!isValidDate(startDate) || !isValidDate(targetDate) || targetDate < startDate) {
+    return 0;
+  }
+  let count = 0;
+  let currentDate = startDate;
+  while (currentDate <= targetDate) {
+    count += 1;
+    const nextDate = advanceBudgetDate(currentDate, "monthly", isValidDate);
+    if (nextDate <= currentDate) {
+      break;
+    }
+    currentDate = nextDate;
+  }
+  return count;
+}
+
 function normalizeBudgetPayload(body, { isValidDate }) {
   const entityId = body?.entity_id;
   const name =
@@ -109,13 +257,16 @@ function normalizeBudgetPayload(body, { isValidDate }) {
       : body?.is_active === true ||
         body?.is_active === 1 ||
         String(body?.is_active).trim().toLowerCase() === "true";
+  const hasBudgetItemsInput = body?.budget_items !== undefined;
+  const normalizedBudgetItems = hasBudgetItemsInput
+    ? normalizeBudgetItems(body?.budget_items)
+    : { items: [] };
 
   if (
     !name ||
-    !Number.isFinite(targetAmount) ||
-    targetAmount <= 0 ||
-    !BUDGET_PAYMENT_PLANS.has(paymentPlan) ||
-    !BUDGET_PAYMENT_FREQUENCIES.has(paymentFrequency) ||
+    (!hasBudgetItemsInput && (!Number.isFinite(targetAmount) || targetAmount <= 0)) ||
+    (!hasBudgetItemsInput && !BUDGET_PAYMENT_PLANS.has(paymentPlan)) ||
+    (!hasBudgetItemsInput && !BUDGET_PAYMENT_FREQUENCIES.has(paymentFrequency)) ||
     !isValidDate(startDate) ||
     (targetDate !== null && !isValidDate(targetDate))
   ) {
@@ -124,6 +275,54 @@ function normalizeBudgetPayload(body, { isValidDate }) {
 
   if (targetDate && targetDate < startDate) {
     return { error: "Target date cannot be before the start date" };
+  }
+
+  if (normalizedBudgetItems.error) {
+    return { error: normalizedBudgetItems.error };
+  }
+
+  if (hasBudgetItemsInput) {
+    if (!normalizedBudgetItems.items.length) {
+      return { error: "Add at least one budget item" };
+    }
+    if (!targetDate) {
+      return { error: "Budget plans with items require a target date" };
+    }
+
+    const summary = summarizeBudgetItems(normalizedBudgetItems.items);
+    const schedule = buildItemizedBudgetSchedule(normalizedBudgetItems.items, {
+      startDate,
+      targetDate,
+      isValidDate,
+    });
+    const derivedTargetAmount = roundMoney(
+      schedule.reduce((sum, entry) => sum + Number(entry.amount ?? 0), 0)
+    );
+    if (derivedTargetAmount <= 0) {
+      return { error: "Budget items must produce a valid target amount" };
+    }
+
+    return {
+      entity_id: entityId,
+      name,
+      category,
+      target_amount: derivedTargetAmount,
+      payment_plan: summary.monthly_total > 0 ? "installment" : "one_time",
+      payment_frequency: summary.monthly_total > 0 ? "monthly" : "once",
+      payment_amount:
+        summary.monthly_total > 0
+          ? roundMoney(summary.monthly_total)
+          : roundMoney(summary.one_time_total),
+      payment_count:
+        summary.monthly_total > 0
+          ? countMonthlyBudgetOccurrences(startDate, targetDate, isValidDate)
+          : 1,
+      start_date: startDate,
+      target_date: targetDate,
+      notes,
+      is_active: isActive,
+      budget_items: normalizedBudgetItems.items,
+    };
   }
 
   if (paymentPlan === "one_time") {
@@ -143,6 +342,7 @@ function normalizeBudgetPayload(body, { isValidDate }) {
       target_date: targetDate,
       notes,
       is_active: isActive,
+      budget_items: [],
     };
   }
 
@@ -178,10 +378,20 @@ function normalizeBudgetPayload(body, { isValidDate }) {
     target_date: targetDate,
     notes,
     is_active: isActive,
+    budget_items: [],
   };
 }
 
 function buildBudgetSchedule(item, { isValidDate }) {
+  const budgetItems = parseBudgetItems(item?.budget_items ?? item?.budget_items_json);
+  if (budgetItems.length > 0) {
+    return buildItemizedBudgetSchedule(budgetItems, {
+      startDate: String(item?.start_date || "").trim(),
+      targetDate: normalizeOptionalText(item?.target_date),
+      isValidDate,
+    });
+  }
+
   const totalAmount = roundMoney(item?.target_amount);
   const startDate = String(item?.start_date || "").trim();
   if (!Number.isFinite(totalAmount) || totalAmount <= 0 || !isValidDate(startDate)) {
@@ -234,6 +444,8 @@ function buildBudgetSchedule(item, { isValidDate }) {
 
 function buildBudgetMetrics(item, { isValidDate, todayISO }) {
   const schedule = buildBudgetSchedule(item, { isValidDate });
+  const budgetItems = parseBudgetItems(item?.budget_items ?? item?.budget_items_json);
+  const budgetItemSummary = summarizeBudgetItems(budgetItems);
   const today = todayISO();
   const weeklyEndDate = addDays(today, 6, isValidDate);
   const monthlyEndDate = addDays(today, 29, isValidDate);
@@ -293,6 +505,9 @@ function buildBudgetMetrics(item, { isValidDate, todayISO }) {
       date: entry.date,
       amount: roundMoney(entry.amount),
     })),
+    one_time_total: roundMoney(budgetItemSummary.one_time_total),
+    monthly_total: roundMoney(budgetItemSummary.monthly_total),
+    item_count: Number(budgetItemSummary.item_count || 0),
   };
 }
 
@@ -300,6 +515,7 @@ function serializeBudgetRow(row, deps) {
   if (!row) {
     return null;
   }
+  const budgetItems = parseBudgetItems(row.budget_items_json);
   const metrics = buildBudgetMetrics(row, deps);
   return {
     id: Number(row.id),
@@ -320,6 +536,7 @@ function serializeBudgetRow(row, deps) {
     target_date: row.target_date ? String(row.target_date) : null,
     notes: row.notes ? String(row.notes) : null,
     is_active: row.is_active === true || row.is_active === 1 || row.is_active === "1",
+    budget_items: budgetItems,
     created_at: String(row.created_at || ""),
     updated_at: String(row.updated_at || ""),
     ...metrics,
@@ -373,6 +590,7 @@ function registerBudgetRoutes(app, deps) {
           b.start_date,
           b.target_date,
           b.notes,
+          b.budget_items_json,
           b.is_active,
           b.created_at,
           b.updated_at
@@ -417,11 +635,12 @@ function registerBudgetRoutes(app, deps) {
           start_date,
           target_date,
           notes,
+          budget_items_json,
           is_active,
           created_at,
           updated_at
         )
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         `,
         [
           resolvedEntityId,
@@ -435,6 +654,7 @@ function registerBudgetRoutes(app, deps) {
           payload.start_date,
           payload.target_date,
           payload.notes,
+          JSON.stringify(payload.budget_items || []),
           payload.is_active ? 1 : 0,
           now,
           now,
@@ -458,6 +678,7 @@ function registerBudgetRoutes(app, deps) {
           b.start_date,
           b.target_date,
           b.notes,
+          b.budget_items_json,
           b.is_active,
           b.created_at,
           b.updated_at
@@ -508,6 +729,7 @@ function registerBudgetRoutes(app, deps) {
           start_date = ?,
           target_date = ?,
           notes = ?,
+          budget_items_json = ?,
           is_active = ?,
           updated_at = ?
         WHERE id = ?
@@ -524,6 +746,7 @@ function registerBudgetRoutes(app, deps) {
           payload.start_date,
           payload.target_date,
           payload.notes,
+          JSON.stringify(payload.budget_items || []),
           payload.is_active ? 1 : 0,
           updatedAt,
           id,
@@ -551,6 +774,7 @@ function registerBudgetRoutes(app, deps) {
           b.start_date,
           b.target_date,
           b.notes,
+          b.budget_items_json,
           b.is_active,
           b.created_at,
           b.updated_at
@@ -591,4 +815,5 @@ module.exports = {
   buildBudgetSchedule,
   buildBudgetMetrics,
   advanceBudgetDate,
+  summarizeBudgetItems,
 };

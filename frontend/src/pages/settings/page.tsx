@@ -85,7 +85,6 @@ export default function Settings() {
     budgets,
     categories,
     createAccount,
-    createBudget,
     createCategory,
     createEntity,
     createIncomeCategory,
@@ -143,17 +142,6 @@ export default function Settings() {
   const [incomeCategoryDraft, setIncomeCategoryDraft] = useState<CategoryDraft | null>(null);
   const [incomeCategoryDrawerError, setIncomeCategoryDrawerError] = useState("");
   const [isIncomeCategoryDrawerSubmitting, setIsIncomeCategoryDrawerSubmitting] = useState(false);
-  const [budgetForm, setBudgetForm] = useState({
-    entity_id: "",
-    name: "",
-    category: "",
-    target_amount: "",
-    payment_plan: "one_time",
-    payment_frequency: "once",
-    payment_amount: "",
-    payment_count: "",
-    start_date: new Date().toISOString().slice(0, 10),
-  });
   const [defaultAccountsSubmittingEntityId, setDefaultAccountsSubmittingEntityId] =
     useState("");
   const [defaultAccountsError, setDefaultAccountsError] = useState("");
@@ -353,32 +341,6 @@ export default function Settings() {
       setAccountDrawerError(error?.message || "Failed to delete account");
       setDeletingAccountId(null);
     }
-  }
-
-  async function submitBudget() {
-    await createBudget({
-      ...budgetForm,
-      entity_id: budgetForm.entity_id || entities[0]?.id,
-      target_amount: Number(budgetForm.target_amount || 0),
-      payment_amount:
-        budgetForm.payment_plan === "one_time"
-          ? Number(budgetForm.target_amount || 0)
-          : Number(budgetForm.payment_amount || 0),
-      payment_count:
-        budgetForm.payment_plan === "one_time"
-          ? 1
-          : budgetForm.payment_count
-            ? Number(budgetForm.payment_count)
-            : null,
-    });
-    setBudgetForm((prev) => ({
-      ...prev,
-      name: "",
-      category: "",
-      target_amount: "",
-      payment_amount: "",
-      payment_count: "",
-    }));
   }
 
   function openExpenseCategoryDrawer(category: CategoryRecord) {
@@ -870,95 +832,18 @@ export default function Settings() {
         {tab === "budgets" ? (
           <div className="space-y-4">
             <Card className="p-5">
-              <h2 className="mb-4 text-lg font-semibold text-text">Create Budget</h2>
-              <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
-                <select
-                  value={budgetForm.entity_id}
-                  onChange={(event) => setBudgetForm((prev) => ({ ...prev, entity_id: event.target.value }))}
-                  className="rounded-lg bg-bg-subtle px-3 py-2.5 text-sm outline-none"
-                >
-                  <option value="">Select entity</option>
-                  {entities.map((entity) => (
-                    <option key={entity.id} value={entity.id}>
-                      {entity.name}
-                    </option>
-                  ))}
-                </select>
-                <input
-                  value={budgetForm.name}
-                  onChange={(event) => setBudgetForm((prev) => ({ ...prev, name: event.target.value }))}
-                  placeholder="Budget name"
-                  className="rounded-lg bg-bg-subtle px-3 py-2.5 text-sm outline-none"
-                />
-                <input
-                  value={budgetForm.category}
-                  onChange={(event) => setBudgetForm((prev) => ({ ...prev, category: event.target.value }))}
-                  placeholder="Category"
-                  className="rounded-lg bg-bg-subtle px-3 py-2.5 text-sm outline-none"
-                />
-                <input
-                  value={budgetForm.target_amount}
-                  onChange={(event) => setBudgetForm((prev) => ({ ...prev, target_amount: event.target.value }))}
-                  placeholder="Target amount"
-                  className="rounded-lg bg-bg-subtle px-3 py-2.5 text-sm outline-none"
-                />
-                <select
-                  value={budgetForm.payment_plan}
-                  onChange={(event) =>
-                    setBudgetForm((prev) => ({
-                      ...prev,
-                      payment_plan: event.target.value,
-                      payment_frequency: event.target.value === "one_time" ? "once" : "monthly",
-                    }))
-                  }
-                  className="rounded-lg bg-bg-subtle px-3 py-2.5 text-sm outline-none"
-                >
-                  <option value="one_time">one_time</option>
-                  <option value="installment">installment</option>
-                </select>
-                <select
-                  value={budgetForm.payment_frequency}
-                  onChange={(event) => setBudgetForm((prev) => ({ ...prev, payment_frequency: event.target.value }))}
-                  className="rounded-lg bg-bg-subtle px-3 py-2.5 text-sm outline-none"
-                >
-                  <option value="once">once</option>
-                  <option value="weekly">weekly</option>
-                  <option value="monthly">monthly</option>
-                  <option value="yearly">yearly</option>
-                </select>
-                {budgetForm.payment_plan === "installment" ? (
-                  <>
-                    <input
-                      value={budgetForm.payment_amount}
-                      onChange={(event) => setBudgetForm((prev) => ({ ...prev, payment_amount: event.target.value }))}
-                      placeholder="Payment amount"
-                      className="rounded-lg bg-bg-subtle px-3 py-2.5 text-sm outline-none"
-                    />
-                    <input
-                      value={budgetForm.payment_count}
-                      onChange={(event) => setBudgetForm((prev) => ({ ...prev, payment_count: event.target.value }))}
-                      placeholder="Payment count"
-                      className="rounded-lg bg-bg-subtle px-3 py-2.5 text-sm outline-none"
-                    />
-                  </>
-                ) : null}
-                <input
-                  type="date"
-                  value={budgetForm.start_date}
-                  onChange={(event) => setBudgetForm((prev) => ({ ...prev, start_date: event.target.value }))}
-                  className="rounded-lg bg-bg-subtle px-3 py-2.5 text-sm outline-none"
-                />
-              </div>
-              <button
-                onClick={submitBudget}
-                className="mt-4 rounded-lg bg-accent px-4 py-2 text-sm font-medium text-white"
-              >
-                Add budget
-              </button>
+              <h2 className="text-lg font-semibold text-text">Budget Settings</h2>
+              <p className="mt-1 text-sm text-text-secondary">
+                Create new budgets from <span className="font-medium text-text">Forecast &gt; Budgeting</span>.
+                Existing budgets remain visible here for review and cleanup.
+              </p>
             </Card>
 
             {budgets.length === 0 ? (
-              <EmptyState title="No budgets found" body="Create a budget to start planning future spending." />
+              <EmptyState
+                title="No budgets found"
+                body="Create a budget from Forecast > Budgeting to start planning future spending."
+              />
             ) : (
               budgets.map((budget) => (
                 <Card key={budget.id} className="p-5">

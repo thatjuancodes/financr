@@ -498,6 +498,10 @@ async function init() {
   const hasLegacyAccountAttributionBackfillFlag = settingsColumns.some(
     (col) => col.name === LEGACY_ACCOUNT_ATTRIBUTION_BACKFILL_V1_FLAG
   );
+  const budgetColumns = all("PRAGMA table_info(budgets)");
+  const hasBudgetItemsJson = budgetColumns.some(
+    (col) => col.name === "budget_items_json"
+  );
   db.run(`
     CREATE TABLE IF NOT EXISTS entity_account_preferences (
       entity_id TEXT PRIMARY KEY,
@@ -514,6 +518,10 @@ async function init() {
   if (!hasDefaultIncomeAccount) {
     db.run("ALTER TABLE settings ADD COLUMN default_income_account_id INTEGER");
   }
+  if (!hasBudgetItemsJson) {
+    db.run("ALTER TABLE budgets ADD COLUMN budget_items_json TEXT DEFAULT '[]'");
+  }
+  db.run("UPDATE budgets SET budget_items_json = '[]' WHERE budget_items_json IS NULL");
   if (!hasTransferBookkeepingBackfillFlag) {
     db.run(
       `ALTER TABLE settings ADD COLUMN ${TRANSFER_BOOKKEEPING_BACKFILL_V1_FLAG} INTEGER DEFAULT 0`
