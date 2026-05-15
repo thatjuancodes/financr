@@ -9,11 +9,19 @@ import { useFinanceData } from "@/contexts/FinanceDataContext";
 import { formatCurrency } from "@/lib/finance";
 import { AutomationContent } from "@/pages/automation/page";
 import DebtSettingsSection from "@/pages/settings/components/DebtSettingsSection";
+import ImportSettingsSection from "@/pages/settings/components/ImportSettingsSection";
 import { normalizeDefaultAccountPreferencesForEntity } from "@/utils/accounts";
 import { CATEGORY_COLOR_SWATCHES, buildCategoryBadgeStyle, resolveCategoryColor } from "@/utils/categoryColors";
 import type { CategoryRecord } from "@/types/finance";
 
-type SettingsTab = "accounts" | "categories" | "budgets" | "debts" | "automation" | "app";
+type SettingsTab =
+  | "accounts"
+  | "categories"
+  | "budgets"
+  | "debts"
+  | "import"
+  | "automation"
+  | "app";
 type CategoryDraft = {
   name: string;
   color: string | null;
@@ -34,7 +42,15 @@ type DeleteEntityState = {
   name: string;
 };
 
-const SETTINGS_TABS: SettingsTab[] = ["accounts", "categories", "budgets", "debts", "automation", "app"];
+const SETTINGS_TABS: SettingsTab[] = [
+  "accounts",
+  "categories",
+  "budgets",
+  "debts",
+  "import",
+  "automation",
+  "app",
+];
 
 const accountTypes = ["bank", "cash", "ewallet", "credit"];
 const entityTypes = ["personal", "family", "business"];
@@ -98,6 +114,7 @@ export default function Settings() {
     incomeCategories,
     loanOriginConfigs,
     loading,
+    refresh,
     saveLoanOriginConfig,
     setDefaultAccounts,
     setCurrency,
@@ -151,7 +168,7 @@ export default function Settings() {
   const [isEntityDeleteSubmitting, setIsEntityDeleteSubmitting] = useState(false);
 
   useEffect(() => {
-    if (tab === "accounts") {
+    if (tab === "accounts" || tab === "import") {
       void loadSettingsAccounts();
     }
   }, [tab]);
@@ -479,7 +496,7 @@ export default function Settings() {
         <div className="mb-6">
           <h1 className="text-2xl font-semibold text-text">Settings</h1>
           <p className="mt-1 text-sm text-text-secondary">
-            Manage entities, accounts, categories, budgets, automation, and app currency
+            Manage entities, accounts, categories, imports, budgets, automation, and app currency
           </p>
         </div>
 
@@ -878,6 +895,16 @@ export default function Settings() {
             loanOriginConfigs={loanOriginConfigs}
             onDeleteConfig={deleteLoanOriginConfig}
             onSaveConfig={saveLoanOriginConfig}
+          />
+        ) : null}
+
+        {tab === "import" ? (
+          <ImportSettingsSection
+            accounts={settingsAccounts}
+            categories={categories}
+            entities={entities}
+            incomeCategories={incomeCategories}
+            onImported={refresh}
           />
         ) : null}
 

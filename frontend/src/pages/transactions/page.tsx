@@ -1,4 +1,4 @@
-import { type ReactNode, useEffect, useMemo, useRef, useState } from "react";
+import { type ReactNode, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { api } from "@/api";
 import Badge from "@/components/base/Badge";
 import Card from "@/components/base/Card";
@@ -329,6 +329,16 @@ export default function Transactions() {
     () => buildCategoryMetaByName(categories, "expense-category"),
     [categories]
   );
+  const expenseExpectationByRowId = useMemo(() => {
+    const map = new Map<string, ExpenseExpectation>();
+    expenseList.forEach((expense) => {
+      map.set(
+        `expense:${expense.id}`,
+        expense.expense_expectation === "expected" ? "expected" : "unexpected"
+      );
+    });
+    return map;
+  }, [expenseList]);
   const incomeCategoryMetaByName = useMemo(
     () => buildCategoryMetaByName(incomeCategories, "income-category"),
     [incomeCategories]
@@ -385,6 +395,7 @@ export default function Transactions() {
     () => new Set(selectedCategories),
     [selectedCategories]
   );
+  const normalizedSearch = search.trim().toLowerCase();
 
   useEffect(() => {
     setSelectedCategories((current) =>
@@ -789,27 +800,36 @@ export default function Transactions() {
     }
   }
 
-  const filtered = useMemo(() => {
-    return sourceRows.filter((transaction) => {
+  const matchesTransactionFilters = useCallback(
+    (
+      transaction: TransactionListRow,
+      options: {
+        ignoreMonth?: boolean;
+      } = {}
+    ) => {
       const text = `${transaction.note || ""} ${transaction.category || ""} ${transaction.from_account_name || ""} ${transaction.to_account_name || ""}`
         .toLowerCase()
         .trim();
-      const matchesSearch = !search || text.includes(search.toLowerCase());
-      const matchesType =
-        activeType === "expense" || activeType === "debt"
-          ? true
-          : activeType === "all" || transaction.type === activeType;
+      const matchesSearch = !normalizedSearch || text.includes(normalizedSearch);
       const categoryLabel = String(transaction.category || "Uncategorized");
       const matchesCategory =
         selectedCategorySet.size === 0 || selectedCategorySet.has(categoryLabel);
-      const matchesMonth = !selectedMonth || monthKey(transaction.created_at) === selectedMonth;
+      const matchesMonth =
+        options.ignoreMonth || !selectedMonth
+          ? true
+          : monthKey(transaction.created_at) === selectedMonth;
       const matchesAccount =
         selectedAccountId === "" ||
         String(transaction.from_account_id || "") === selectedAccountId ||
         String(transaction.to_account_id || "") === selectedAccountId;
-      return matchesSearch && matchesType && matchesCategory && matchesMonth && matchesAccount;
-    });
-  }, [activeType, search, selectedAccountId, selectedCategorySet, selectedMonth, sourceRows]);
+      return matchesSearch && matchesCategory && matchesMonth && matchesAccount;
+    },
+    [normalizedSearch, selectedAccountId, selectedCategorySet, selectedMonth]
+  );
+  const filtered = useMemo(
+    () => sourceRows.filter((transaction) => matchesTransactionFilters(transaction)),
+    [matchesTransactionFilters, sourceRows]
+  );
   const visibleRows = useMemo(() => {
     const rows = [...filtered];
 
@@ -859,14 +879,15 @@ export default function Transactions() {
     const normalizeExpectation = (value: unknown): ExpenseExpectation =>
       value === "expected" ? "expected" : "unexpected";
 
-    return expenseList.reduce(
+    return filtered.reduce(
       (summary, expense) => {
-        const matchesMonth = !selectedMonth || monthKey(expense.spent_at) === selectedMonth;
-        if (!matchesMonth) {
+        if (expense.type !== "expense") {
           return summary;
         }
         const amount = Number(expense.amount || 0);
-        const expectation = normalizeExpectation(expense.expense_expectation);
+        const expectation = normalizeExpectation(
+          expenseExpectationByRowId.get(String(expense.id))
+        );
         summary.total += amount;
         summary[expectation] += amount;
         summary.count += 1;
@@ -874,15 +895,11 @@ export default function Transactions() {
       },
       { total: 0, expected: 0, unexpected: 0, count: 0 }
     );
-  }, [expenseList, selectedMonth]);
+  }, [expenseExpectationByRowId, filtered]);
   const incomeSummary = useMemo(() => {
-    return sortedTransactions.reduce(
+    return filtered.reduce(
       (summary, transaction) => {
         if (transaction.type !== "income") {
-          return summary;
-        }
-        const matchesMonth = !selectedMonth || monthKey(transaction.created_at) === selectedMonth;
-        if (!matchesMonth) {
           return summary;
         }
         summary.total += Number(transaction.amount || 0);
@@ -891,12 +908,11 @@ export default function Transactions() {
       },
       { total: 0, count: 0 }
     );
-  }, [selectedMonth, sortedTransactions]);
+  }, [filtered]);
   const debtSummary = useMemo(() => {
-    return debtList.reduce(
+    return filtered.reduce(
       (summary, debt) => {
-        const matchesMonth = !selectedMonth || monthKey(debt.spent_at) === selectedMonth;
-        if (!matchesMonth) {
+        if (debt.type !== "debt") {
           return summary;
         }
         summary.total += Number(debt.amount || 0);
@@ -905,7 +921,20 @@ export default function Transactions() {
       },
       { total: 0, count: 0 }
     );
-  }, [debtList, selectedMonth]);
+  }, [filtered]);
+  const filteredExpenseRowsForComparison = useMemo(
+    () => expenseRows.filter((transaction) => matchesTransactionFilters(transaction, { ignoreMonth: true })),
+    [expenseRows, matchesTransactionFilters]
+  );
+  const comparisonExpenseRows = useMemo(
+    () =>
+      filteredExpenseRowsForComparison.map((expense) => ({
+        amount: Number(expense.amount || 0),
+        expense_expectation: expenseExpectationByRowId.get(String(expense.id)) || null,
+        spent_at: expense.created_at,
+      })),
+    [expenseExpectationByRowId, filteredExpenseRowsForComparison]
+  );
   const expenseComparison = useMemo(() => {
     if (!selectedMonth) {
       return null;
@@ -913,23 +942,27 @@ export default function Transactions() {
 
     const cutoffDay = new Date().getDate();
     const previousMonth = getPreviousMonthKey(selectedMonth);
-    const currentWindow = buildExpenseWindowSummary(expenseList, selectedMonth, cutoffDay);
-    const previousWindow = buildExpenseWindowSummary(expenseList, previousMonth, cutoffDay);
+    const currentWindow = buildExpenseWindowSummary(
+      comparisonExpenseRows,
+      selectedMonth,
+      cutoffDay
+    );
+    const previousWindow = buildExpenseWindowSummary(
+      comparisonExpenseRows,
+      previousMonth,
+      cutoffDay
+    );
 
     return {
       total: buildComparisonMeta(currentWindow.total, previousWindow.total),
       expected: buildComparisonMeta(currentWindow.expected, previousWindow.expected),
       unexpected: buildComparisonMeta(currentWindow.unexpected, previousWindow.unexpected),
     };
-  }, [expenseList, selectedMonth]);
+  }, [comparisonExpenseRows, selectedMonth]);
   const transferSummary = useMemo(() => {
-    return sortedTransactions.reduce(
+    return filtered.reduce(
       (summary, transaction) => {
         if (transaction.type !== "transfer") {
-          return summary;
-        }
-        const matchesMonth = !selectedMonth || monthKey(transaction.created_at) === selectedMonth;
-        if (!matchesMonth) {
           return summary;
         }
         summary.total += Number(transaction.amount || 0);
@@ -938,7 +971,7 @@ export default function Transactions() {
       },
       { total: 0, count: 0 }
     );
-  }, [selectedMonth, sortedTransactions]);
+  }, [filtered]);
   const metricCards = (() => {
     if (activeType === "expense") {
       return [

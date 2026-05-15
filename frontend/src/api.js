@@ -82,6 +82,11 @@ export const api = {
   },
   addIncome: (payload) =>
     request("/income", { method: "POST", body: JSON.stringify(payload) }),
+  importIncomeCsv: (payload) =>
+    request("/income/import-csv", {
+      method: "POST",
+      body: JSON.stringify(payload),
+    }),
   updateIncome: (id, payload) =>
     request(`/income/${id}`, { method: "PUT", body: JSON.stringify(payload) }),
   deleteIncome: (id) => request(`/income/${id}`, { method: "DELETE" }),
@@ -100,6 +105,11 @@ export const api = {
   },
   addExpense: (payload) =>
     request("/expenses", { method: "POST", body: JSON.stringify(payload) }),
+  importExpenseCsv: (payload) =>
+    request("/expenses/import-csv", {
+      method: "POST",
+      body: JSON.stringify(payload),
+    }),
   updateExpense: (id, payload) =>
     request(`/expenses/${id}`, { method: "PUT", body: JSON.stringify(payload) }),
   deleteExpense: (id) => request(`/expenses/${id}`, { method: "DELETE" }),
@@ -307,6 +317,11 @@ export const api = {
   },
   createTransfer: (payload) =>
     request("/transfers", {
+      method: "POST",
+      body: JSON.stringify(payload),
+    }),
+  importTransferCsv: (payload) =>
+    request("/transfers/import-csv", {
       method: "POST",
       body: JSON.stringify(payload),
     }),

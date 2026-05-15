@@ -1631,6 +1631,146 @@ test("debt payoff creates an expense on the selected account", async () => {
   );
 });
 
+test("expense csv import posts imported rows to the selected account", async () => {
+  const entity = await createEntity({
+    name: randomName("expense-import-entity"),
+    type: "personal",
+  });
+  const account = await createAccount({
+    name: randomName("expense-import-account"),
+    entityId: entity.id,
+    type: "cash",
+  });
+
+  let response = await request("/categories", {
+    method: "POST",
+    body: {
+      name: randomName("expense-import-category"),
+      color: "#10B981",
+    },
+  });
+  assert.equal(response.status, 201, JSON.stringify(response.data));
+  const categoryId = response.data.id;
+
+  response = await request("/expenses/import-csv", {
+    method: "POST",
+    body: {
+      entity_id: entity.id,
+      default_from_account_id: account.id,
+      default_expense_category_id: categoryId,
+      csv: ["date,amount,name", "2026-05-01,120.50,Groceries", "2026-05-02,80.00,Taxi"].join(
+        "\n"
+      ),
+    },
+  });
+  assert.equal(response.status, 201, JSON.stringify(response.data));
+  assert.equal(response.data.imported_count, 2);
+
+  response = await request(`/expenses?entity_id=${encodeURIComponent(entity.id)}`);
+  assert.equal(response.status, 200, JSON.stringify(response.data));
+  assert.equal(response.data.length >= 2, true);
+  const importedRows = response.data.filter(
+    (item) => item.from_account_id === account.id && Number(item.expense_category_id) === categoryId
+  );
+  assert.equal(importedRows.length >= 2, true);
+
+  const accountsAfter = await getAccountsById();
+  assertMoneyEqual(accountsAfter.get(account.id).balance, -200.5);
+});
+
+test("income csv import credits the selected account", async () => {
+  const entity = await createEntity({
+    name: randomName("income-import-entity"),
+    type: "personal",
+  });
+  const account = await createAccount({
+    name: randomName("income-import-account"),
+    entityId: entity.id,
+    type: "cash",
+  });
+
+  let response = await request("/income-categories", {
+    method: "POST",
+    body: {
+      name: randomName("income-import-category"),
+      color: "#3B82F6",
+    },
+  });
+  assert.equal(response.status, 201, JSON.stringify(response.data));
+  const categoryId = response.data.id;
+
+  response = await request("/income/import-csv", {
+    method: "POST",
+    body: {
+      entity_id: entity.id,
+      default_to_account_id: account.id,
+      default_income_category_id: categoryId,
+      csv: ["received_date,amount,source", "2026-05-01,350.25,Freelance"].join("\n"),
+    },
+  });
+  assert.equal(response.status, 201, JSON.stringify(response.data));
+  assert.equal(response.data.imported_count, 1);
+
+  response = await request(`/income?entity_id=${encodeURIComponent(entity.id)}`);
+  assert.equal(response.status, 200, JSON.stringify(response.data));
+  const importedRow = response.data.find(
+    (item) =>
+      item.to_account_id === account.id &&
+      Number(item.income_category_id) === categoryId &&
+      item.source === "Freelance"
+  );
+  assert.ok(importedRow, "Expected imported income row");
+
+  const accountsAfter = await getAccountsById();
+  assertMoneyEqual(accountsAfter.get(account.id).balance, 350.25);
+});
+
+test("transfer csv import accepts account names and updates balances", async () => {
+  const entitiesByType = await getEntitiesByType();
+  const personalEntityId = entitiesByType.get("personal").id;
+
+  const fromAccount = await createAccount({
+    name: randomName("transfer-import-from"),
+    type: "cash",
+    entityId: personalEntityId,
+    currencyCode: "PHP",
+  });
+  const toAccount = await createAccount({
+    name: randomName("transfer-import-to"),
+    type: "bank",
+    entityId: personalEntityId,
+    currencyCode: "PHP",
+  });
+
+  let response = await request("/transactions", {
+    method: "POST",
+    body: {
+      type: "income",
+      amount: 600,
+      to_account_id: fromAccount.id,
+      created_at: "2026-05-01",
+      note: "seed transfer import balance",
+    },
+  });
+  assert.equal(response.status, 201, JSON.stringify(response.data));
+
+  response = await request("/transfers/import-csv", {
+    method: "POST",
+    body: {
+      csv: [
+        "date,amount,from_account,to_account,notes",
+        `2026-05-02,250,${fromAccount.name},${toAccount.name},CSV import transfer`,
+      ].join("\n"),
+    },
+  });
+  assert.equal(response.status, 201, JSON.stringify(response.data));
+  assert.equal(response.data.imported_count, 1);
+
+  const accountsAfter = await getAccountsById();
+  assertMoneyEqual(accountsAfter.get(fromAccount.id).balance, 350);
+  assertMoneyEqual(accountsAfter.get(toAccount.id).balance, 250);
+});
+
 test("account ledger reflects legacy income and expense removal", async () => {
   const entitiesByType = await getEntitiesByType();
   const familyEntityId = entitiesByType.get("family").id;

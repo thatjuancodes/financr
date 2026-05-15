@@ -9,8 +9,22 @@ function registerIncomeRoutes(app, deps) {
     normalizeEntityId,
     getEntityById,
     isValidDate,
+    parseCsvAmount,
+    parseCsvRows,
+    pickCategoryColor,
+    pickCsvValue,
     resolveWriteEntityId,
+    normalizeCsvHeader,
+    isCsvRowEmpty,
   } = deps;
+
+  function normalizeOptionalString(value) {
+    if (value === null || value === undefined) {
+      return null;
+    }
+    const trimmed = String(value).trim();
+    return trimmed ? trimmed : null;
+  }
 
   async function resolveIncomeAccountId(rawAccountId, entityId, keepNull = false) {
     if (rawAccountId !== undefined) {
@@ -46,6 +60,37 @@ function registerIncomeRoutes(app, deps) {
       kind: "income",
     });
     return { accountId: fallbackAccountId };
+  }
+
+  async function resolveIncomeImportAccountId({
+    rawAccountId,
+    rawAccountName,
+    entityId,
+  }) {
+    if (rawAccountId !== null && rawAccountId !== undefined && rawAccountId !== "") {
+      return resolveIncomeAccountId(rawAccountId, entityId);
+    }
+    const accountName = normalizeOptionalString(rawAccountName);
+    if (accountName) {
+      const matches = await all(
+        `
+        SELECT id
+        FROM accounts
+        WHERE entity_id = ?
+          AND LOWER(TRIM(name)) = LOWER(?)
+        ORDER BY created_at ASC, id ASC
+        `,
+        [entityId, accountName]
+      );
+      if (matches.length === 0) {
+        return { error: `Account not found: ${accountName}` };
+      }
+      if (matches.length > 1) {
+        return { error: `Account name is ambiguous: ${accountName}` };
+      }
+      return { accountId: Number(matches[0].id) };
+    }
+    return resolveIncomeAccountId(undefined, entityId);
   }
 
   app.get("/income", async (req, res) => {
@@ -171,6 +216,230 @@ function registerIncomeRoutes(app, deps) {
       res.status(201).json(row);
     } catch (err) {
       res.status(500).json({ error: "Failed to add income" });
+    }
+  });
+
+  app.post("/income/import-csv", async (req, res) => {
+    const csv = typeof req.body?.csv === "string" ? req.body.csv : "";
+    const requestedEntityId = req.body?.entity_id;
+    const defaultCategoryRaw = req.body?.default_income_category_id;
+    const defaultAccountRaw = req.body?.default_to_account_id;
+    const defaultCategoryId =
+      defaultCategoryRaw === null ||
+      defaultCategoryRaw === undefined ||
+      defaultCategoryRaw === ""
+        ? null
+        : Number(defaultCategoryRaw);
+
+    if (!csv.trim()) {
+      return res.status(400).json({ error: "csv is required" });
+    }
+    if (defaultCategoryId !== null && Number.isNaN(defaultCategoryId)) {
+      return res.status(400).json({
+        error: "default_income_category_id must be numeric",
+      });
+    }
+
+    try {
+      const resolvedEntityId = await resolveWriteEntityId(requestedEntityId);
+      if (!resolvedEntityId) {
+        return res.status(400).json({ error: "Invalid income import payload" });
+      }
+
+      if (defaultCategoryId !== null) {
+        const defaultCategory = await get(
+          "SELECT id FROM income_categories WHERE id = ?",
+          [defaultCategoryId]
+        );
+        if (!defaultCategory) {
+          return res.status(400).json({
+            error: "default_income_category_id does not match an existing category",
+          });
+        }
+      }
+
+      const defaultPostingAccount = await resolveIncomeAccountId(
+        defaultAccountRaw === null || defaultAccountRaw === undefined || defaultAccountRaw === ""
+          ? undefined
+          : defaultAccountRaw,
+        resolvedEntityId
+      );
+      if (defaultPostingAccount.error) {
+        return res.status(400).json({ error: defaultPostingAccount.error });
+      }
+
+      const parsedRows = parseCsvRows(csv);
+      const populatedRows = parsedRows.filter((row) => !isCsvRowEmpty(row.cells));
+      if (populatedRows.length < 2) {
+        return res.status(400).json({
+          error: "CSV must include a header row and at least one data row",
+        });
+      }
+
+      const headerRow = populatedRows[0];
+      const headers = headerRow.cells.map(normalizeCsvHeader);
+      const hasSourceColumn =
+        headers.includes("source") ||
+        headers.includes("name") ||
+        headers.includes("description");
+      const hasAmountColumn = headers.includes("amount");
+      const hasDateColumn =
+        headers.includes("received_date") ||
+        headers.includes("date") ||
+        headers.includes("deposit_date");
+      const missingHeaders = [];
+      if (!hasSourceColumn) {
+        missingHeaders.push("source");
+      }
+      if (!hasAmountColumn) {
+        missingHeaders.push("amount");
+      }
+      if (!hasDateColumn) {
+        missingHeaders.push("received_date");
+      }
+      if (missingHeaders.length > 0) {
+        return res.status(400).json({
+          error: `Missing required CSV header(s): ${missingHeaders.join(", ")}`,
+        });
+      }
+
+      const categoryRows = await all(
+        "SELECT id, name FROM income_categories ORDER BY id ASC"
+      );
+      const categoryNameMap = new Map(
+        categoryRows.map((row) => [String(row.name).trim().toLowerCase(), Number(row.id)])
+      );
+
+      const errors = [];
+      let importedCount = 0;
+
+      for (const entry of populatedRows.slice(1)) {
+        const row = {};
+        headers.forEach((header, index) => {
+          if (header) {
+            row[header] = (entry.cells[index] || "").trim();
+          }
+        });
+
+        const receivedDate = pickCsvValue(row, [
+          "received_date",
+          "date",
+          "deposit_date",
+        ]);
+        const source = pickCsvValue(row, ["source", "name", "description"]);
+        const amount = parseCsvAmount(
+          pickCsvValue(row, ["amount", "credit_amount", "value"])
+        );
+
+        if (!isValidDate(receivedDate || "")) {
+          errors.push({
+            line: entry.line,
+            error: "Invalid or missing date (expected YYYY-MM-DD)",
+          });
+          continue;
+        }
+        if (!source) {
+          errors.push({
+            line: entry.line,
+            error: "Missing source/name",
+          });
+          continue;
+        }
+        if (Number.isNaN(amount)) {
+          errors.push({
+            line: entry.line,
+            error: "Invalid or missing amount",
+          });
+          continue;
+        }
+
+        let categoryId = defaultCategoryId;
+        const rowCategoryIdRaw = pickCsvValue(row, [
+          "income_category_id",
+          "category_id",
+        ]);
+        if (rowCategoryIdRaw !== null) {
+          const parsedCategoryId = Number(rowCategoryIdRaw);
+          if (Number.isNaN(parsedCategoryId)) {
+            errors.push({
+              line: entry.line,
+              error: "income_category_id must be numeric when provided",
+            });
+            continue;
+          }
+          const categoryById = await get(
+            "SELECT id FROM income_categories WHERE id = ?",
+            [parsedCategoryId]
+          );
+          if (!categoryById) {
+            errors.push({
+              line: entry.line,
+              error: `Unknown income_category_id: ${parsedCategoryId}`,
+            });
+            continue;
+          }
+          categoryId = parsedCategoryId;
+        } else {
+          const rowCategoryName = normalizeOptionalString(
+            pickCsvValue(row, ["income_category", "category"])
+          );
+          if (rowCategoryName) {
+            const key = rowCategoryName.toLowerCase();
+            if (!categoryNameMap.has(key)) {
+              const created = await run(
+                "INSERT INTO income_categories (name, color) VALUES (?, ?)",
+                [rowCategoryName, pickCategoryColor(rowCategoryName)]
+              );
+              categoryNameMap.set(key, created.lastID);
+            }
+            categoryId = categoryNameMap.get(key);
+          }
+        }
+
+        const postingAccount = await resolveIncomeImportAccountId({
+          rawAccountId: pickCsvValue(row, ["to_account_id", "account_id"]),
+          rawAccountName: pickCsvValue(row, ["to_account", "to_account_name", "account"]),
+          entityId: resolvedEntityId,
+        });
+        if (postingAccount.error) {
+          errors.push({
+            line: entry.line,
+            error: postingAccount.error,
+          });
+          continue;
+        }
+
+        await run(
+          "INSERT INTO income (amount, source, received_date, income_category_id, entity_id, to_account_id) VALUES (?, ?, ?, ?, ?, ?)",
+          [
+            amount,
+            source,
+            receivedDate,
+            categoryId,
+            resolvedEntityId,
+            postingAccount.accountId ?? defaultPostingAccount.accountId,
+          ]
+        );
+        importedCount += 1;
+      }
+
+      if (importedCount === 0 && errors.length > 0) {
+        return res.status(400).json({
+          error: "No income rows were imported",
+          imported_count: 0,
+          skipped_count: errors.length,
+          errors,
+        });
+      }
+
+      res.status(201).json({
+        imported_count: importedCount,
+        skipped_count: errors.length,
+        total_rows: populatedRows.length - 1,
+        errors,
+      });
+    } catch (err) {
+      res.status(500).json({ error: "Failed to import income from CSV" });
     }
   });
 

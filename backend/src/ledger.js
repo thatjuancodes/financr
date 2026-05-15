@@ -1500,7 +1500,82 @@ async function listTransfers(all, { entityId = null, dateFrom = "", dateTo = "" 
     });
 }
 
-function registerLedgerRoutes(app, { run, get, all }) {
+function registerLedgerRoutes(
+  app,
+  {
+    run,
+    get,
+    all,
+    isValidDate,
+    normalizeCsvHeader,
+    parseCsvAmount,
+    parseCsvRows,
+    pickCsvValue,
+    isCsvRowEmpty,
+  }
+) {
+  function parseCsvBoolean(value) {
+    if (value === null || value === undefined) {
+      return false;
+    }
+    const normalized = String(value).trim().toLowerCase();
+    return normalized === "true" || normalized === "1" || normalized === "yes";
+  }
+
+  async function resolveTransferImportAccountId({ row, side }) {
+    const accountId = parseOptionalAccountId(
+      pickCsvValue(row, [`${side}_account_id`, `${side}_id`])
+    );
+    if (accountId) {
+      const account = await getAccountById(get, accountId);
+      if (!account) {
+        return { error: `${side} account does not exist` };
+      }
+      return { accountId: account.id };
+    }
+
+    const accountName = normalizeText(
+      pickCsvValue(row, [`${side}_account`, `${side}_account_name`]) || ""
+    );
+    if (!accountName) {
+      return { error: `${side} account is required` };
+    }
+
+    const entityId = normalizeEntityId(
+      pickCsvValue(row, [`${side}_entity_id`]) || ""
+    );
+    const entityName = normalizeText(
+      pickCsvValue(row, [`${side}_entity`, `${side}_entity_name`]) || ""
+    );
+    const conditions = ["LOWER(TRIM(a.name)) = LOWER(?)"];
+    const params = [accountName];
+    if (entityId) {
+      conditions.push("a.entity_id = ?");
+      params.push(entityId);
+    }
+    if (entityName) {
+      conditions.push("LOWER(TRIM(e.name)) = LOWER(?)");
+      params.push(entityName);
+    }
+
+    const matches = await all(
+      `
+      SELECT a.id
+      FROM accounts a
+      LEFT JOIN entities e ON e.id = a.entity_id
+      WHERE ${conditions.join(" AND ")}
+      ORDER BY a.created_at ASC, a.id ASC
+      `,
+      params
+    );
+    if (matches.length === 0) {
+      return { error: `${side} account not found: ${accountName}` };
+    }
+    if (matches.length > 1) {
+      return { error: `${side} account name is ambiguous: ${accountName}` };
+    }
+    return { accountId: Number(matches[0].id) };
+  }
   app.get("/entities", async (req, res) => {
     try {
       const rows = await all(
@@ -1703,6 +1778,287 @@ function registerLedgerRoutes(app, { run, get, all }) {
       res.json(rows);
     } catch (err) {
       res.status(500).json({ error: "Failed to load transfers" });
+    }
+  });
+
+  app.post("/transfers/import-csv", async (req, res) => {
+    const csv = typeof req.body?.csv === "string" ? req.body.csv : "";
+
+    if (!csv.trim()) {
+      return res.status(400).json({ error: "csv is required" });
+    }
+
+    try {
+      const parsedRows = parseCsvRows(csv);
+      const populatedRows = parsedRows.filter((row) => !isCsvRowEmpty(row.cells));
+      if (populatedRows.length < 2) {
+        return res.status(400).json({
+          error: "CSV must include a header row and at least one data row",
+        });
+      }
+
+      const headerRow = populatedRows[0];
+      const headers = headerRow.cells.map(normalizeCsvHeader);
+      const hasAmountColumn = headers.includes("amount");
+      const hasDateColumn = headers.includes("date") || headers.includes("transfer_date");
+      const hasFromAccountColumn =
+        headers.includes("from_account_id") ||
+        headers.includes("from_id") ||
+        headers.includes("from_account") ||
+        headers.includes("from_account_name");
+      const hasToAccountColumn =
+        headers.includes("to_account_id") ||
+        headers.includes("to_id") ||
+        headers.includes("to_account") ||
+        headers.includes("to_account_name");
+
+      const missingHeaders = [];
+      if (!hasAmountColumn) {
+        missingHeaders.push("amount");
+      }
+      if (!hasDateColumn) {
+        missingHeaders.push("date");
+      }
+      if (!hasFromAccountColumn) {
+        missingHeaders.push("from_account_id");
+      }
+      if (!hasToAccountColumn) {
+        missingHeaders.push("to_account_id");
+      }
+      if (missingHeaders.length > 0) {
+        return res.status(400).json({
+          error: `Missing required CSV header(s): ${missingHeaders.join(", ")}`,
+        });
+      }
+
+      const errors = [];
+      let importedCount = 0;
+
+      for (const entry of populatedRows.slice(1)) {
+        const row = {};
+        headers.forEach((header, index) => {
+          if (header) {
+            row[header] = (entry.cells[index] || "").trim();
+          }
+        });
+
+        const transferDate =
+          pickCsvValue(row, ["date", "transfer_date", "created_at"]) || "";
+        const amount = parseCsvAmount(pickCsvValue(row, ["amount", "value"]));
+        const transferFeeAmountRaw = pickCsvValue(row, [
+          "transfer_fee_amount",
+          "fee_amount",
+          "fee",
+        ]);
+        const transferFeeAmount =
+          transferFeeAmountRaw === null ? 0 : Number(transferFeeAmountRaw);
+
+        if (!isValidDate(transferDate)) {
+          errors.push({
+            line: entry.line,
+            error: "Invalid or missing date (expected YYYY-MM-DD)",
+          });
+          continue;
+        }
+        if (Number.isNaN(amount) || amount <= 0) {
+          errors.push({
+            line: entry.line,
+            error: "Invalid or missing amount",
+          });
+          continue;
+        }
+        if (!Number.isFinite(transferFeeAmount) || transferFeeAmount < 0) {
+          errors.push({
+            line: entry.line,
+            error: "Invalid transfer fee",
+          });
+          continue;
+        }
+
+        const fromAccount = await resolveTransferImportAccountId({
+          row,
+          side: "from",
+        });
+        if (fromAccount.error) {
+          errors.push({
+            line: entry.line,
+            error: fromAccount.error,
+          });
+          continue;
+        }
+
+        const toAccount = await resolveTransferImportAccountId({
+          row,
+          side: "to",
+        });
+        if (toAccount.error) {
+          errors.push({
+            line: entry.line,
+            error: toAccount.error,
+          });
+          continue;
+        }
+
+        const payload = {
+          from_account_id: fromAccount.accountId,
+          to_account_id: toAccount.accountId,
+          amount,
+          transfer_fee_amount: transferFeeAmount,
+          date: transferDate,
+          notes: pickCsvValue(row, ["notes", "note", "memo"]),
+          mirror_as_income_expense: parseCsvBoolean(
+            pickCsvValue(row, ["mirror_as_income_expense", "mirror"])
+          ),
+          expense_category_id: pickCsvValue(row, ["expense_category_id"]),
+          income_category_id: pickCsvValue(row, ["income_category_id"]),
+        };
+
+        const resolved = await resolveTransferPayload({
+          body: payload,
+          get,
+          all,
+        });
+        if (resolved.error) {
+          errors.push({
+            line: entry.line,
+            error: resolved.error,
+          });
+          continue;
+        }
+
+        const {
+          fromAccountId,
+          toAccountId,
+          amountCents,
+          transferFeeCents,
+          fromAccount: resolvedFromAccount,
+          toAccount: resolvedToAccount,
+        } = resolved.payload;
+        const isCrossEntity =
+          String(resolvedFromAccount.entity_id || "") !==
+          String(resolvedToAccount.entity_id || "");
+        const resolvedBookkeeping = await resolveTransferBookkeepingPayload({
+          body: payload,
+          get,
+          isCrossEntity,
+        });
+        if (resolvedBookkeeping.error) {
+          errors.push({
+            line: entry.line,
+            error: resolvedBookkeeping.error,
+          });
+          continue;
+        }
+
+        let feeExpenseId = null;
+        let bookkeepingExpenseId = null;
+        let bookkeepingIncomeId = null;
+        try {
+          const transferId = createUuid();
+          const now = new Date().toISOString();
+
+          feeExpenseId =
+            transferFeeCents > 0
+              ? await createTransferFeeExpense({
+                  get,
+                  run,
+                  amountCents: transferFeeCents,
+                  spentAt: transferDate,
+                  entityId: resolvedFromAccount.entity_id,
+                  fromAccountId,
+                  transferId,
+                })
+              : null;
+
+          if (resolvedBookkeeping.payload.mirrorAsIncomeExpense) {
+            const bookkeepingRows = await createTransferBookkeepingRows({
+              run,
+              amountCents,
+              transferDate: `${transferDate}T00:00:00.000Z`,
+              notes: payload.notes || null,
+              fromAccount: resolvedFromAccount,
+              toAccount: resolvedToAccount,
+              expenseCategoryId: resolvedBookkeeping.payload.expenseCategoryId,
+              incomeCategoryId: resolvedBookkeeping.payload.incomeCategoryId,
+            });
+            bookkeepingExpenseId = bookkeepingRows.bookkeepingExpenseId;
+            bookkeepingIncomeId = bookkeepingRows.bookkeepingIncomeId;
+          }
+
+          await run(
+            `
+            INSERT INTO transfers (
+              id,
+              from_account_id,
+              to_account_id,
+              amount_cents,
+              transfer_fee_cents,
+              fee_expense_id,
+              mirror_as_income_expense,
+              expense_category_id,
+              income_category_id,
+              bookkeeping_expense_id,
+              bookkeeping_income_id,
+              transfer_date,
+              notes,
+              created_at,
+              updated_at
+            )
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            `,
+            [
+              transferId,
+              fromAccountId,
+              toAccountId,
+              amountCents,
+              transferFeeCents,
+              feeExpenseId,
+              resolvedBookkeeping.payload.mirrorAsIncomeExpense ? 1 : 0,
+              resolvedBookkeeping.payload.expenseCategoryId,
+              resolvedBookkeeping.payload.incomeCategoryId,
+              bookkeepingExpenseId,
+              bookkeepingIncomeId,
+              `${transferDate}T00:00:00.000Z`,
+              payload.notes || null,
+              now,
+              now,
+            ]
+          );
+          importedCount += 1;
+        } catch (_err) {
+          if (bookkeepingIncomeId) {
+            await run("DELETE FROM income WHERE id = ?", [bookkeepingIncomeId]);
+          }
+          if (bookkeepingExpenseId) {
+            await run("DELETE FROM expenses WHERE id = ?", [bookkeepingExpenseId]);
+          }
+          if (feeExpenseId) {
+            await run("DELETE FROM expenses WHERE id = ?", [feeExpenseId]);
+          }
+          errors.push({
+            line: entry.line,
+            error: "Failed to create transfer row",
+          });
+        }
+      }
+
+      if (importedCount === 0 && errors.length > 0) {
+        return res.status(400).json({
+          error: "No transfer rows were imported",
+          imported_count: 0,
+          skipped_count: errors.length,
+          errors,
+        });
+      }
+
+      res.status(201).json({
+        imported_count: importedCount,
+        skipped_count: errors.length,
+        total_rows: populatedRows.length - 1,
+        errors,
+      });
+    } catch (_err) {
+      res.status(500).json({ error: "Failed to import transfers from CSV" });
     }
   });
 

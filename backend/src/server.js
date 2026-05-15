@@ -58,7 +58,17 @@ const PORT = process.env.PORT || 3001;
 
 app.use(cors());
 app.use(express.json({ limit: "2mb" }));
-registerLedgerRoutes(app, { run, get, all });
+registerLedgerRoutes(app, {
+  run,
+  get,
+  all,
+  isValidDate,
+  normalizeCsvHeader,
+  parseCsvAmount,
+  parseCsvRows,
+  pickCsvValue,
+  isCsvRowEmpty,
+});
 
 const ISO_DATE = /^\d{4}-\d{2}-\d{2}$/;
 const MONTH_KEY = /^\d{4}-\d{2}$/;
@@ -906,6 +916,48 @@ function parseCsvAmount(value) {
     return NaN;
   }
   return isNegativeByParens ? -Math.abs(amount) : amount;
+}
+
+async function resolveImportAccountIdForEntity({
+  rawAccountId,
+  rawAccountName,
+  entityId,
+  kind,
+}) {
+  if (rawAccountId !== null && rawAccountId !== undefined && rawAccountId !== "") {
+    return resolvePostingAccountId({
+      rawAccountId,
+      entityId,
+      kind,
+    });
+  }
+
+  const normalizedAccountName = normalizeOptionalString(rawAccountName);
+  if (normalizedAccountName) {
+    const matches = await all(
+      `
+      SELECT id
+      FROM accounts
+      WHERE entity_id = ?
+        AND LOWER(TRIM(name)) = LOWER(?)
+      ORDER BY created_at ASC, id ASC
+      `,
+      [entityId, normalizedAccountName]
+    );
+    if (matches.length === 0) {
+      return { error: `Account not found: ${normalizedAccountName}` };
+    }
+    if (matches.length > 1) {
+      return { error: `Account name is ambiguous: ${normalizedAccountName}` };
+    }
+    return { accountId: Number(matches[0].id) };
+  }
+
+  return resolvePostingAccountId({
+    rawAccountId: undefined,
+    entityId,
+    kind,
+  });
 }
 
 function parseDayOfMonth(value) {
@@ -2094,7 +2146,13 @@ registerIncomeRoutes(app, {
   normalizeEntityId,
   getEntityById,
   isValidDate,
+  parseCsvAmount,
+  parseCsvRows,
+  pickCategoryColor,
+  pickCsvValue,
   resolveWriteEntityId,
+  normalizeCsvHeader,
+  isCsvRowEmpty,
 });
 
 registerInstitutionRoutes(app, {
@@ -2273,6 +2331,255 @@ app.post("/expenses", async (req, res) => {
     res.status(201).json(row);
   } catch (err) {
     res.status(500).json({ error: "Failed to add expense" });
+  }
+});
+
+app.post("/expenses/import-csv", async (req, res) => {
+  const csv = typeof req.body?.csv === "string" ? req.body.csv : "";
+  const requestedEntityId = req.body?.entity_id;
+  const defaultCategoryRaw = req.body?.default_expense_category_id;
+  const defaultAccountRaw = req.body?.default_from_account_id;
+  const defaultExpectation =
+    normalizeExpenseExpectation(req.body?.default_expense_expectation) || "unexpected";
+  const defaultCategoryId =
+    defaultCategoryRaw === null ||
+    defaultCategoryRaw === undefined ||
+    defaultCategoryRaw === ""
+      ? null
+      : Number(defaultCategoryRaw);
+
+  if (!csv.trim()) {
+    return res.status(400).json({ error: "csv is required" });
+  }
+  if (defaultCategoryId !== null && Number.isNaN(defaultCategoryId)) {
+    return res.status(400).json({
+      error: "default_expense_category_id must be numeric",
+    });
+  }
+
+  try {
+    const resolvedEntityId = await resolveWriteEntityId(requestedEntityId);
+    if (!resolvedEntityId) {
+      return res.status(400).json({ error: "Invalid expense import payload" });
+    }
+
+    if (defaultCategoryId !== null) {
+      const defaultCategory = await get("SELECT id FROM categories WHERE id = ?", [
+        defaultCategoryId,
+      ]);
+      if (!defaultCategory) {
+        return res.status(400).json({
+          error: "default_expense_category_id does not match an existing category",
+        });
+      }
+    }
+
+    const defaultPostingAccount = await resolvePostingAccountId({
+      rawAccountId:
+        defaultAccountRaw === null || defaultAccountRaw === undefined || defaultAccountRaw === ""
+          ? undefined
+          : defaultAccountRaw,
+      entityId: resolvedEntityId,
+      kind: "expense",
+    });
+    if (defaultPostingAccount.error) {
+      return res.status(400).json({ error: defaultPostingAccount.error });
+    }
+
+    const parsedRows = parseCsvRows(csv);
+    const populatedRows = parsedRows.filter((row) => !isCsvRowEmpty(row.cells));
+    if (populatedRows.length < 2) {
+      return res.status(400).json({
+        error: "CSV must include a header row and at least one data row",
+      });
+    }
+
+    const headerRow = populatedRows[0];
+    const headers = headerRow.cells.map(normalizeCsvHeader);
+    const hasNameColumn =
+      headers.includes("name") ||
+      headers.includes("description") ||
+      headers.includes("merchant") ||
+      headers.includes("category");
+    const hasAmountColumn = headers.includes("amount");
+    const hasDateColumn =
+      headers.includes("spent_at") ||
+      headers.includes("date") ||
+      headers.includes("transaction_date") ||
+      headers.includes("purchase_date") ||
+      headers.includes("post_date") ||
+      headers.includes("posted_date");
+
+    const missingHeaders = [];
+    if (!hasNameColumn) {
+      missingHeaders.push("name");
+    }
+    if (!hasAmountColumn) {
+      missingHeaders.push("amount");
+    }
+    if (!hasDateColumn) {
+      missingHeaders.push("spent_at");
+    }
+    if (missingHeaders.length > 0) {
+      return res.status(400).json({
+        error: `Missing required CSV header(s): ${missingHeaders.join(", ")}`,
+      });
+    }
+
+    const categoryRows = await all("SELECT id, name FROM categories ORDER BY id ASC");
+    const categoryNameMap = new Map(
+      categoryRows.map((row) => [String(row.name).trim().toLowerCase(), Number(row.id)])
+    );
+
+    const errors = [];
+    let importedCount = 0;
+
+    for (const entry of populatedRows.slice(1)) {
+      const row = {};
+      headers.forEach((header, index) => {
+        if (header) {
+          row[header] = (entry.cells[index] || "").trim();
+        }
+      });
+
+      const spentAt = pickCsvValue(row, [
+        "spent_at",
+        "date",
+        "transaction_date",
+        "purchase_date",
+        "post_date",
+        "posted_date",
+      ]);
+      const expenseName = pickCsvValue(row, [
+        "name",
+        "description",
+        "merchant",
+        "category",
+      ]);
+      const amount = parseCsvAmount(pickCsvValue(row, ["amount", "debit_amount", "value"]));
+      const expectation =
+        normalizeExpenseExpectation(
+          pickCsvValue(row, ["expense_expectation", "expectation"])
+        ) || defaultExpectation;
+
+      if (!isValidDate(spentAt || "")) {
+        errors.push({
+          line: entry.line,
+          error: "Invalid or missing date (expected YYYY-MM-DD)",
+        });
+        continue;
+      }
+      if (!expenseName) {
+        errors.push({
+          line: entry.line,
+          error: "Missing name/description",
+        });
+        continue;
+      }
+      if (Number.isNaN(amount)) {
+        errors.push({
+          line: entry.line,
+          error: "Invalid or missing amount",
+        });
+        continue;
+      }
+
+      let categoryId = defaultCategoryId;
+      const rowCategoryIdRaw = pickCsvValue(row, [
+        "expense_category_id",
+        "category_id",
+      ]);
+      if (rowCategoryIdRaw !== null) {
+        const parsedCategoryId = Number(rowCategoryIdRaw);
+        if (Number.isNaN(parsedCategoryId)) {
+          errors.push({
+            line: entry.line,
+            error: "expense_category_id must be numeric when provided",
+          });
+          continue;
+        }
+        const categoryById = await get("SELECT id FROM categories WHERE id = ?", [
+          parsedCategoryId,
+        ]);
+        if (!categoryById) {
+          errors.push({
+            line: entry.line,
+            error: `Unknown expense_category_id: ${parsedCategoryId}`,
+          });
+          continue;
+        }
+        categoryId = parsedCategoryId;
+      } else {
+        const rowCategoryName = normalizeOptionalString(
+          pickCsvValue(row, ["expense_category"])
+        );
+        if (rowCategoryName) {
+          const key = rowCategoryName.toLowerCase();
+          if (!categoryNameMap.has(key)) {
+            const created = await run(
+              "INSERT INTO categories (name, color) VALUES (?, ?)",
+              [rowCategoryName, pickCategoryColor(rowCategoryName)]
+            );
+            categoryNameMap.set(key, created.lastID);
+          }
+          categoryId = categoryNameMap.get(key);
+        }
+      }
+
+      const postingAccount = await resolveImportAccountIdForEntity({
+        rawAccountId: pickCsvValue(row, ["from_account_id", "account_id"]),
+        rawAccountName: pickCsvValue(row, ["from_account", "from_account_name", "account"]),
+        entityId: resolvedEntityId,
+        kind: "expense",
+      });
+      if (postingAccount.error) {
+        errors.push({
+          line: entry.line,
+          error: postingAccount.error,
+        });
+        continue;
+      }
+
+      const createdAt = new Date().toISOString();
+      await run(
+        "INSERT INTO expenses (amount, category, notes, spent_at, created_at, expense_category_id, expense_expectation, entity_id, from_account_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+        [
+          amount,
+          expenseName,
+          normalizeOptionalString(pickCsvValue(row, ["notes", "note", "memo"])),
+          spentAt,
+          createdAt,
+          categoryId,
+          expectation,
+          resolvedEntityId,
+          postingAccount.accountId ?? defaultPostingAccount.accountId,
+        ]
+      );
+      await upsertExpenseSuggestion({
+        category: expenseName,
+        amount,
+        expense_category_id: categoryId,
+      });
+      importedCount += 1;
+    }
+
+    if (importedCount === 0 && errors.length > 0) {
+      return res.status(400).json({
+        error: "No expense rows were imported",
+        imported_count: 0,
+        skipped_count: errors.length,
+        errors,
+      });
+    }
+
+    res.status(201).json({
+      imported_count: importedCount,
+      skipped_count: errors.length,
+      total_rows: populatedRows.length - 1,
+      errors,
+    });
+  } catch (err) {
+    res.status(500).json({ error: "Failed to import expenses from CSV" });
   }
 });
 
