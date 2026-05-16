@@ -341,6 +341,7 @@ function registerDebtRoutes(app, deps) {
         : Number(debt_category_id);
     if (
       Number.isNaN(parsedAmount) ||
+      parsedAmount <= 0 ||
       !debtName ||
       !isValidDate(spent_at) ||
       (statementMonthValue !== null && !isValidMonthKey(statementMonthValue)) ||
@@ -417,6 +418,7 @@ function registerDebtRoutes(app, deps) {
     if (
       Number.isNaN(id) ||
       Number.isNaN(parsedAmount) ||
+      parsedAmount <= 0 ||
       !debtName ||
       !isValidDate(spent_at) ||
       (categoryId !== null && Number.isNaN(categoryId))

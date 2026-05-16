@@ -8,7 +8,7 @@ import { useFinanceData } from "@/contexts/FinanceDataContext";
 import { ALL_ENTITIES_ID, formatCurrency, formatLongDate, formatShortDate, monthKey, sortByDateDesc } from "@/lib/finance";
 import DebtStatementsView from "@/pages/transactions/components/DebtStatementsView";
 import type { CategoryRecord } from "@/types/finance";
-import { buildDebtCycleMonthsFromData } from "@/utils/appState";
+import { buildDebtCycleMonthsFromData, getDebtStatementMonth } from "@/utils/appState";
 import {
   defaultAccountSelection,
   normalizeDefaultAccountPreferencesForEntity,
@@ -23,11 +23,14 @@ type TransactionListRow = {
   source_type: string;
   type: FilterType;
   amount: number;
+  entity_id?: string | null;
   from_account_id?: number | null;
   to_account_id?: number | null;
   from_account_name?: string | null;
   to_account_name?: string | null;
   from_entity_name?: string | null;
+  loan_origin?: string | null;
+  statement_month?: string | null;
   to_entity_name?: string | null;
   currency_code?: string | null;
   category?: string | null;
@@ -266,9 +269,12 @@ export default function Transactions() {
           amount: Number(debt.amount || 0),
           from_account_id: null,
           to_account_id: null,
+          entity_id: debt.entity_id || null,
           from_account_name: null,
           to_account_name: null,
           from_entity_name: debt.entity_name || null,
+          loan_origin: debt.loan_origin || null,
+          statement_month: debt.statement_month || null,
           to_entity_name: null,
           currency_code: balance?.currency_code || "PHP",
           category: debt.debt_category_name || debt.loan_origin || "Debt",
@@ -280,6 +286,15 @@ export default function Transactions() {
         "created_at"
       ),
     [balance?.currency_code, debtList]
+  );
+  const loanOriginConfigMap = useMemo(
+    () =>
+      new Map(
+        loanOriginConfigs
+          .filter((config) => config.loan_origin)
+          .map((config) => [config.loan_origin, config] as const)
+      ),
+    [loanOriginConfigs]
   );
   const allRows = useMemo<TransactionListRow[]>(
     () => sortByDateDesc([...sortedTransactions, ...debtRows], "created_at"),
@@ -318,12 +333,12 @@ export default function Transactions() {
           currentMonth,
           ...allRows.map((transaction) => monthKey(transaction.created_at)),
           ...expenseRows.map((transaction) => monthKey(transaction.created_at)),
-          ...debtRows.map((transaction) => monthKey(transaction.created_at)),
+          ...debtRows.map((transaction) => getDebtRowMonthKey(transaction, loanOriginConfigMap)),
         ])
       )
         .filter(Boolean)
         .sort((left, right) => right.localeCompare(left)),
-    [allRows, currentMonth, debtRows, expenseRows]
+    [allRows, currentMonth, debtRows, expenseRows, loanOriginConfigMap]
   );
   const expenseCategoryMetaByName = useMemo(
     () => buildCategoryMetaByName(categories, "expense-category"),
@@ -566,6 +581,9 @@ export default function Transactions() {
   }
 
   function canEditTransaction(transaction: TransactionListRow) {
+    if (transaction.source_type === "debt" && Number(transaction.amount || 0) <= 0) {
+      return false;
+    }
     return new Set<EditableSourceType>([
       "debt",
       "expense",
@@ -817,14 +835,14 @@ export default function Transactions() {
       const matchesMonth =
         options.ignoreMonth || !selectedMonth
           ? true
-          : monthKey(transaction.created_at) === selectedMonth;
+          : getTransactionMonthKey(transaction, loanOriginConfigMap) === selectedMonth;
       const matchesAccount =
         selectedAccountId === "" ||
         String(transaction.from_account_id || "") === selectedAccountId ||
         String(transaction.to_account_id || "") === selectedAccountId;
       return matchesSearch && matchesCategory && matchesMonth && matchesAccount;
     },
-    [normalizedSearch, selectedAccountId, selectedCategorySet, selectedMonth]
+    [loanOriginConfigMap, normalizedSearch, selectedAccountId, selectedCategorySet, selectedMonth]
   );
   const filtered = useMemo(
     () => sourceRows.filter((transaction) => matchesTransactionFilters(transaction)),
@@ -910,18 +928,11 @@ export default function Transactions() {
     );
   }, [filtered]);
   const debtSummary = useMemo(() => {
-    return filtered.reduce(
-      (summary, debt) => {
-        if (debt.type !== "debt") {
-          return summary;
-        }
-        summary.total += Number(debt.amount || 0);
-        summary.count += 1;
-        return summary;
-      },
-      { total: 0, count: 0 }
-    );
-  }, [filtered]);
+    return buildDebtSummary(filtered, loanOriginConfigMap);
+  }, [filtered, loanOriginConfigMap]);
+  const outstandingDebtSummary = useMemo(() => {
+    return buildDebtSummary(debtRows, loanOriginConfigMap);
+  }, [debtRows, loanOriginConfigMap]);
   const filteredExpenseRowsForComparison = useMemo(
     () => expenseRows.filter((transaction) => matchesTransactionFilters(transaction, { ignoreMonth: true })),
     [expenseRows, matchesTransactionFilters]
@@ -1026,10 +1037,10 @@ export default function Transactions() {
     if (activeType === "debt") {
       return [
         {
-          label: "Total Debt",
-          value: formatCurrency(debtSummary.total, currency),
+          label: "Outstanding Debt",
+          value: formatCurrency(outstandingDebtSummary.total, currency),
           accent: "default" as const,
-          hint: undefined,
+          hint: "Current debt balance after recorded payments",
           comparison: null,
         },
       ];
@@ -1051,10 +1062,10 @@ export default function Transactions() {
         comparison: null,
       },
       {
-        label: "Total Debt",
-        value: formatCurrency(debtSummary.total, currency),
+        label: "Outstanding Debt",
+        value: formatCurrency(outstandingDebtSummary.total, currency),
         accent: "default" as const,
-        hint: undefined,
+        hint: "Current debt balance after recorded payments",
         comparison: null,
       },
     ];
@@ -1378,11 +1389,15 @@ export default function Transactions() {
           debtDraft.entity_id,
           null
         );
+        const amount = Number(debtDraft.amount || 0);
         if (!entityId) {
           throw new Error("Select an entity.");
         }
+        if (!Number.isFinite(amount) || amount <= 0) {
+          throw new Error("Enter a valid debt amount.");
+        }
         const payload = {
-          amount: Number(debtDraft.amount || 0),
+          amount,
           name: debtDraft.name,
           loan_origin: debtDraft.loan_origin.trim() || null,
           notes: debtDraft.notes.trim() || null,
@@ -1662,7 +1677,7 @@ export default function Transactions() {
 	                    Statement-aware debt mode
 	                  </p>
 	                  <p className="mt-1 text-sm text-text-secondary">
-	                    Statement months follow the loan origin rules from Settings → Debts, so late-March charges can appear in the April statement.
+	                    Statement months follow each loan origin's saved statement rules, so late-March charges can appear in the April statement.
 	                  </p>
 	                </div>
 	              ) : (
@@ -3422,12 +3437,14 @@ function createDebtTransactionRow(
   debt: {
     id: number;
     amount: number;
+    entity_id?: string | null;
     debt_category_name?: string | null;
     entity_name?: string | null;
     loan_origin?: string | null;
     name: string;
     notes?: string | null;
     spent_at: string;
+    statement_month?: string | null;
   },
   currency: string
 ): TransactionListRow {
@@ -3436,14 +3453,76 @@ function createDebtTransactionRow(
     category: debt.debt_category_name || debt.loan_origin || "Debt",
     created_at: debt.spent_at,
     currency_code: currency,
+    entity_id: debt.entity_id || null,
     from_entity_name: debt.entity_name || null,
     id: `debt:${debt.id}`,
+    loan_origin: debt.loan_origin || null,
     note: debt.notes
       ? `${debt.name || debt.debt_category_name || "Debt"} - ${debt.notes}`
       : debt.name || debt.debt_category_name || "Debt",
     source_type: "debt",
+    statement_month: debt.statement_month || null,
     to_entity_name: null,
     type: "debt",
+  };
+}
+
+function getDebtRowMonthKey(
+  transaction: Pick<TransactionListRow, "created_at" | "loan_origin" | "statement_month" | "type">,
+  configMap: Map<string, { statement_day?: number | null }>
+) {
+  if (transaction.type !== "debt") {
+    return monthKey(transaction.created_at);
+  }
+  return (
+    getDebtStatementMonth(
+      {
+        loan_origin: transaction.loan_origin || null,
+        spent_at: transaction.created_at,
+        statement_month: transaction.statement_month || null,
+      },
+      configMap
+    ) || monthKey(transaction.created_at)
+  );
+}
+
+function getTransactionMonthKey(
+  transaction: TransactionListRow,
+  configMap: Map<string, { statement_day?: number | null }>
+) {
+  if (transaction.type === "debt") {
+    return getDebtRowMonthKey(transaction, configMap);
+  }
+  return monthKey(transaction.created_at);
+}
+
+function buildDebtSummary(
+  rows: TransactionListRow[],
+  configMap: Map<string, { statement_day?: number | null }>
+) {
+  const groupedTotals = new Map<string, number>();
+  let count = 0;
+
+  rows.forEach((row) => {
+    if (row.type !== "debt") {
+      return;
+    }
+    count += 1;
+    const amount = Number(row.amount || 0);
+    const entityId = String(row.entity_id || "__unknown__");
+    const loanOrigin = String(row.loan_origin || "__unassigned__");
+    const statementMonth = getDebtRowMonthKey(row, configMap);
+    const groupKey = `${entityId}::${loanOrigin}::${statementMonth}`;
+    groupedTotals.set(groupKey, Number(groupedTotals.get(groupKey) || 0) + amount);
+  });
+
+  const total = Array.from(groupedTotals.values()).reduce((sum, value) => {
+    return sum + Math.max(Number(value || 0), 0);
+  }, 0);
+
+  return {
+    total: Number(total.toFixed(2)),
+    count,
   };
 }
 

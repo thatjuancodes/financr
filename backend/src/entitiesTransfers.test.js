@@ -1629,6 +1629,29 @@ test("debt payoff creates an expense on the selected account", async () => {
     0,
     "Statement payoff should clear the selected statement cycle balance"
   );
+
+  const payoffDebtId = response.data?.debt?.id;
+  assert.ok(Number.isInteger(payoffDebtId), "Payoff should create a debt ledger row");
+
+  response = await request(`/debts/${payoffDebtId}`, {
+    method: "PUT",
+    body: {
+      amount: -200,
+      name: "Edited Debt Payment",
+      loan_origin: loanOrigin,
+      spent_at: "2026-04-10",
+      entity_id: entity.id,
+    },
+  });
+  assert.equal(response.status, 400, JSON.stringify(response.data));
+
+  response = await request(`/balance?entity_id=${encodeURIComponent(entity.id)}`);
+  assert.equal(response.status, 200, JSON.stringify(response.data));
+  assertMoneyEqual(
+    response.data?.debt_total,
+    0,
+    "Debt total should not go negative after a cleared statement payoff"
+  );
 });
 
 test("expense csv import posts imported rows to the selected account", async () => {

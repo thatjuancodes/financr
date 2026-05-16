@@ -18,6 +18,36 @@ function registerSettingsBalanceRoutes(app, deps) {
     getUpcomingRecurringExpenseTotal,
   } = deps;
 
+  async function getOutstandingDebtTotal(entityId = null) {
+    const row = await get(
+      `
+      SELECT COALESCE(SUM(CASE WHEN grouped.total > 0 THEN grouped.total ELSE 0 END), 0) AS total
+      FROM (
+        SELECT
+          SUM(d.amount) AS total
+        FROM debts d
+        LEFT JOIN loan_origin_configs cfg ON cfg.loan_origin = d.loan_origin
+        ${entityId ? "WHERE d.entity_id = ?" : ""}
+        GROUP BY
+          d.entity_id,
+          COALESCE(NULLIF(TRIM(d.loan_origin), ''), '__unassigned__'),
+          COALESCE(
+            NULLIF(TRIM(d.statement_month), ''),
+            CASE
+              WHEN cfg.statement_day IS NOT NULL
+                AND CAST(SUBSTR(d.spent_at, 9, 2) AS INTEGER) >= cfg.statement_day
+              THEN STRFTIME('%Y-%m', DATE(d.spent_at, 'start of month', '+1 month'))
+              ELSE SUBSTR(d.spent_at, 1, 7)
+            END
+          )
+      ) grouped
+      `,
+      entityId ? [entityId] : []
+    );
+
+    return Number(row?.total ?? 0);
+  }
+
   app.get("/health", (_req, res) => {
     res.json({ ok: true });
   });
@@ -271,12 +301,7 @@ function registerSettingsBalanceRoutes(app, deps) {
         }`,
         entityId ? [entityId] : []
       );
-      const debtTotal = await get(
-        `SELECT COALESCE(SUM(amount), 0) AS total FROM debts${
-          entityId ? " WHERE entity_id = ?" : ""
-        }`,
-        entityId ? [entityId] : []
-      );
+      const debtTotal = { total: await getOutstandingDebtTotal(entityId || null) };
       const recurringItems = await all(
         `${RECURRING_SELECT} WHERE r.type = 'expense'${
           entityId ? " AND r.entity_id = ?" : ""
