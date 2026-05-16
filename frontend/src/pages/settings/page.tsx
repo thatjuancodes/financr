@@ -851,15 +851,15 @@ export default function Settings() {
             <Card className="p-5">
               <h2 className="text-lg font-semibold text-text">Budget Settings</h2>
               <p className="mt-1 text-sm text-text-secondary">
-                Create new budgets from <span className="font-medium text-text">Forecast &gt; Budgeting</span>.
-                Existing budgets remain visible here for review and cleanup.
+                Budget planning is temporarily disabled. Existing budgets remain visible here for
+                review and cleanup.
               </p>
             </Card>
 
             {budgets.length === 0 ? (
               <EmptyState
                 title="No budgets found"
-                body="Create a budget from Forecast > Budgeting to start planning future spending."
+                body="Budget planning is currently unavailable."
               />
             ) : (
               budgets.map((budget) => (

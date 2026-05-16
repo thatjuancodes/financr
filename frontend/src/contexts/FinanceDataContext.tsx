@@ -15,15 +15,12 @@ import type {
   ExpenseRecord,
   IncomeRecord,
   LoanOriginConfigRecord,
-  ProjectionScenarioDetail,
-  ProjectionScenarioRecord,
   RecurringItemRecord,
   SettingsRecord,
   TransactionRecord,
 } from "@/types/finance";
 
 const STORAGE_KEY = "financr-v1-selected-entity";
-const DEFAULT_WORKSPACE_ID = "default";
 
 type FinanceContextValue = {
   loading: boolean;
@@ -45,7 +42,6 @@ type FinanceContextValue = {
   incomeCategories: CategoryRecord[];
   budgets: BudgetRecord[];
   balance: BalanceRecord | null;
-  projectionScenarios: ProjectionScenarioRecord[];
   scopedTransactions: TransactionRecord[];
   refresh: () => Promise<void>;
   clearNotice: () => void;
@@ -86,12 +82,6 @@ type FinanceContextValue = {
   confirmRecurring: (id: number) => Promise<void>;
   skipRecurring: (id: number) => Promise<void>;
   deleteRecurring: (id: number) => Promise<void>;
-  loadProjectionScenario: (id: string) => Promise<ProjectionScenarioDetail>;
-  previewProjectionScenario: (payload: Record<string, unknown>) => Promise<any>;
-  createProjectionScenario: (payload: Record<string, unknown>) => Promise<void>;
-  updateProjectionScenario: (id: string, payload: Record<string, unknown>) => Promise<void>;
-  deleteProjectionScenario: (id: string) => Promise<void>;
-  duplicateProjectionScenario: (id: string) => Promise<void>;
   currentMonth: string;
 };
 
@@ -124,7 +114,6 @@ export function FinanceDataProvider({ children }: { children: React.ReactNode })
   const [incomeCategories, setIncomeCategories] = React.useState<CategoryRecord[]>([]);
   const [budgets, setBudgets] = React.useState<BudgetRecord[]>([]);
   const [balance, setBalance] = React.useState<BalanceRecord | null>(null);
-  const [projectionScenarios, setProjectionScenarios] = React.useState<ProjectionScenarioRecord[]>([]);
 
   const currentMonth = currentMonthKey();
 
@@ -154,7 +143,6 @@ export function FinanceDataProvider({ children }: { children: React.ReactNode })
         nextIncomeCategories,
         nextBudgets,
         nextBalance,
-        nextProjectionScenarios,
       ] = await Promise.all([
         api.getSettings(),
         api.getEntities(),
@@ -170,11 +158,6 @@ export function FinanceDataProvider({ children }: { children: React.ReactNode })
         api.getIncomeCategories(),
         api.getBudgets(entityId ? { entity_id: entityId } : {}),
         api.getBalance(entityId ? { entity_id: entityId } : {}),
-        api.getProjectionScenarios(
-          entityId
-            ? { workspace_id: DEFAULT_WORKSPACE_ID, entity_id: entityId }
-            : { workspace_id: DEFAULT_WORKSPACE_ID }
-        ),
       ]);
 
       setSettings(nextSettings);
@@ -191,7 +174,6 @@ export function FinanceDataProvider({ children }: { children: React.ReactNode })
       setIncomeCategories(nextIncomeCategories);
       setBudgets(nextBudgets);
       setBalance(nextBalance);
-      setProjectionScenarios(nextProjectionScenarios);
     } catch (nextError: any) {
       setError(nextError?.message || "Failed to load finance data");
     } finally {
@@ -235,7 +217,6 @@ export function FinanceDataProvider({ children }: { children: React.ReactNode })
     incomeCategories,
     budgets,
     balance,
-    projectionScenarios,
     scopedTransactions: scopeTransactions(transactions, selectedEntityId),
     refresh,
     clearNotice: () => setNotice(""),
@@ -298,16 +279,6 @@ export function FinanceDataProvider({ children }: { children: React.ReactNode })
       runMutation(() => api.confirmRecurringItem(id), "Recurring item confirmed"),
     skipRecurring: (id) => runMutation(() => api.skipRecurringItem(id), "Recurring item skipped"),
     deleteRecurring: (id) => runMutation(() => api.deleteRecurringItem(id), "Recurring item deleted"),
-    loadProjectionScenario: (id) => api.getProjectionScenario(id),
-    previewProjectionScenario: (payload) => api.previewProjectionScenario(payload),
-    createProjectionScenario: (payload) =>
-      runMutation(() => api.createProjectionScenario(payload), "Projection created"),
-    updateProjectionScenario: (id, payload) =>
-      runMutation(() => api.updateProjectionScenario(id, payload), "Projection updated"),
-    deleteProjectionScenario: (id) =>
-      runMutation(() => api.deleteProjectionScenario(id), "Projection deleted"),
-    duplicateProjectionScenario: (id) =>
-      runMutation(() => api.duplicateProjectionScenario(id), "Projection duplicated"),
     currentMonth,
   }), [
     accounts,
@@ -325,7 +296,6 @@ export function FinanceDataProvider({ children }: { children: React.ReactNode })
     loanOriginConfigs,
     notice,
     pendingRecurringItems,
-    projectionScenarios,
     recurringItems,
     refresh,
     runMutation,

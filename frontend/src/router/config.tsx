@@ -5,7 +5,6 @@ import Home from "../pages/home/page";
 import Transactions from "../pages/transactions/page";
 import Recurring from "../pages/recurring/page";
 import Reporting from "../pages/reporting/page";
-import Forecast from "../pages/forecast/page";
 import Settings from "../pages/settings/page";
 import DesignSystem from "../pages/design/page";
 import Notifications from "../pages/notifications/page";
@@ -30,10 +29,6 @@ const routes: RouteObject[] = [
   {
     path: "/notifications",
     element: <Notifications />,
-  },
-  {
-    path: "/forecast",
-    element: <Forecast />,
   },
   {
     path: "/insights",

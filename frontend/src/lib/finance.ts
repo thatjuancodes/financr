@@ -11,8 +11,6 @@ import type {
   DebtRecord,
   ExpenseRecord,
   IncomeRecord,
-  ProjectionResultPoint,
-  ProjectionScenarioRecord,
   RecurringItemRecord,
   TransactionRecord,
 } from "@/types/finance";
@@ -501,59 +499,6 @@ export function buildHealthScore(
       },
     ],
   };
-}
-
-export function buildProjectionForecast(balance: BalanceRecord | null, recurringItems: RecurringItemRecord[]) {
-  const monthlyIncome = recurringItems
-    .filter((item) => item.type === "income")
-    .reduce((sum, item) => sum + recurringMonthlyAmount(item), 0);
-  const monthlyExpense = recurringItems
-    .filter((item) => item.type === "expense")
-    .reduce((sum, item) => sum + recurringMonthlyAmount(item), 0);
-  const net = monthlyIncome - monthlyExpense;
-  const startingValue = Number(balance?.balance || 0);
-
-  return Array.from({ length: 3 }, (_, index) => {
-    const current = new Date();
-    current.setMonth(current.getMonth() + index + 1);
-    const label = current.toLocaleDateString(undefined, { month: "short" });
-    const projected = startingValue + net * (index + 1);
-    return {
-      month: label,
-      projected,
-      optimistic: projected + Math.abs(net) * 0.2,
-      conservative: projected - Math.abs(net) * 0.2,
-    };
-  });
-}
-
-export function buildProjectionChartData(points: ProjectionResultPoint[]) {
-  return points.map((point) => ({
-    month: `M${point.month}`,
-    value: point.value,
-    contributions: point.total_contributions,
-    interest: point.total_interest,
-  }));
-}
-
-export function buildProjectionOverview(scenario: ProjectionScenarioRecord | null) {
-  if (!scenario?.result_summary) {
-    return [];
-  }
-  return [
-    {
-      label: "Final Value",
-      value: scenario.result_summary.final_value,
-    },
-    {
-      label: "Contributions",
-      value: scenario.result_summary.total_contributions,
-    },
-    {
-      label: "Interest Earned",
-      value: scenario.result_summary.total_interest,
-    },
-  ];
 }
 
 export function findCategory(categories: CategoryRecord[], id: number | string | null | undefined) {

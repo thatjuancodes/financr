@@ -18,13 +18,12 @@ import { useFinanceData } from "@/contexts/FinanceDataContext";
 import {
   buildCategoryBreakdown,
   buildCashflowSeries,
-  buildProjectionForecast,
   formatCompactCurrency,
   formatCurrency,
 } from "@/lib/finance";
 
 export function InsightsContent({ showHeader = true }: { showHeader?: boolean }) {
-  const { balance, recurringItems, scopedTransactions } = useFinanceData();
+  const { balance, scopedTransactions } = useFinanceData();
   const currency = balance?.currency_code || "PHP";
 
   const expenseTransactions = scopedTransactions.filter((transaction) => transaction.type === "expense");
@@ -35,10 +34,6 @@ export function InsightsContent({ showHeader = true }: { showHeader?: boolean })
   const cashflowSeries = useMemo(
     () => buildCashflowSeries(scopedTransactions, 4),
     [scopedTransactions]
-  );
-  const forecastSeries = useMemo(
-    () => buildProjectionForecast(balance, recurringItems),
-    [balance, recurringItems]
   );
   const totalSpent = expenseTransactions.reduce((sum, item) => sum + Number(item.amount || 0), 0);
   const totalIncome = scopedTransactions
@@ -52,14 +47,14 @@ export function InsightsContent({ showHeader = true }: { showHeader?: boolean })
         <div className="mb-6">
           <h1 className="text-2xl font-semibold text-text">Insights</h1>
           <p className="mt-1 text-sm text-text-secondary">
-            Spending patterns, category mix, and a short recurring cash-flow forecast
+            Spending patterns, category mix, and recent cash-flow trends
           </p>
         </div>
       ) : (
         <div className="mb-6">
           <h2 className="text-lg font-semibold text-text">Insights</h2>
           <p className="mt-1 text-sm text-text-secondary">
-            Spending patterns, category mix, and recurring cash-flow forecasts
+            Spending patterns, category mix, and recent cash-flow trends
           </p>
         </div>
       )}
@@ -147,37 +142,6 @@ export function InsightsContent({ showHeader = true }: { showHeader?: boolean })
               </div>
             </Card>
           </div>
-
-          <Card className="p-5 md:p-6">
-            <h2 className="mb-1 text-lg font-semibold text-text">Recurring Cash-Flow Forecast</h2>
-            <p className="mb-4 text-sm text-text-secondary">
-              Next 90 days based on current recurring income and recurring expense schedules
-            </p>
-            <div className="h-56">
-              <ResponsiveContainer width="100%" height="100%">
-                <AreaChart data={forecastSeries}>
-                  <defs>
-                    <linearGradient id="forecastGrad" x1="0" y1="0" x2="0" y2="1">
-                      <stop offset="0%" stopColor="#2563EB" stopOpacity={0.15} />
-                      <stop offset="100%" stopColor="#2563EB" stopOpacity={0} />
-                    </linearGradient>
-                  </defs>
-                  <CartesianGrid strokeDasharray="3 3" stroke="rgba(15,23,42,0.05)" />
-                  <XAxis dataKey="month" tick={{ fontSize: 11, fill: "#94A3B8" }} axisLine={false} tickLine={false} />
-                  <YAxis
-                    tick={{ fontSize: 11, fill: "#94A3B8" }}
-                    axisLine={false}
-                    tickLine={false}
-                    tickFormatter={(value) => formatCompactCurrency(Number(value), currency)}
-                  />
-                  <Tooltip formatter={(value: number) => formatCurrency(value, currency)} />
-                  <Area type="monotone" dataKey="optimistic" stroke="#16A34A" strokeDasharray="6 4" fill="none" />
-                  <Area type="monotone" dataKey="conservative" stroke="#DC2626" strokeDasharray="6 4" fill="none" />
-                  <Area type="monotone" dataKey="projected" stroke="#2563EB" fill="url(#forecastGrad)" strokeWidth={2.5} />
-                </AreaChart>
-              </ResponsiveContainer>
-            </div>
-          </Card>
         </>
       )}
     </>

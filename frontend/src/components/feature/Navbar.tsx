@@ -8,7 +8,6 @@ const navLinks = [
   { path: "/transactions", label: "Transactions", icon: "ri-exchange-dollar-line" },
   { path: "/recurring", label: "Recurring", icon: "ri-repeat-line" },
   { path: "/reporting", label: "Reporting", icon: "ri-file-chart-line" },
-  { path: "/forecast", label: "Forecast", icon: "ri-line-chart-line" },
   { path: "/settings", label: "Settings", icon: "ri-sliders-line" },
 ];
 
