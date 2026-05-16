@@ -10,6 +10,14 @@ const {
   DEFAULT_LOCAL_USER_PASSWORD,
   DEFAULT_LOCAL_USER_NAME,
   DEFAULT_LOCAL_WORKSPACE_NAME,
+  DEMO_LOCAL_USER_ID,
+  DEMO_LOCAL_USER_EMAIL,
+  DEMO_LOCAL_USER_PASSWORD,
+  DEMO_LOCAL_USER_NAME,
+  DEMO_BLANK_USER_ID,
+  DEMO_BLANK_USER_EMAIL,
+  DEMO_BLANK_USER_PASSWORD,
+  DEMO_BLANK_USER_NAME,
   hashPassword,
 } = require("./auth");
 const {
@@ -117,6 +125,89 @@ const DEFAULT_INSTITUTION_SEEDS = [
     currency_code: "PHP",
   },
 ];
+const DEMO_SHOWCASE_WORKSPACE_ID = "00000000-0000-4000-8000-000000000005";
+const DEMO_SHOWCASE_WORKSPACE_NAME = "Steward Showcase";
+const DEMO_BLANK_WORKSPACE_ID = "00000000-0000-4000-8000-000000000006";
+const DEMO_BLANK_WORKSPACE_NAME = "Steward Blank Workspace";
+const DEMO_SHOWCASE_ENTITY_SEEDS = [
+  {
+    id: "44444444-4444-4444-4444-444444444441",
+    name: "Marco Alvarez",
+    type: "personal",
+  },
+  {
+    id: "44444444-4444-4444-4444-444444444442",
+    name: "Alvarez Family",
+    type: "family",
+  },
+  {
+    id: "44444444-4444-4444-4444-444444444443",
+    name: "Alvarez Creative Studio",
+    type: "business",
+  },
+];
+const DEMO_SHOWCASE_MONTHLY_SEEDS = [
+  {
+    month: "2025-11",
+    personalIncome: 85000,
+    personalExpenses: { housing: 19000, groceries: 12000, mobility: 12000 },
+    familyIncome: 32000,
+    familyExpenses: { groceries: 14500, utilities: 6000, education: 8500 },
+    businessIncome: 180000,
+    businessExpenses: { payroll: 72000, software: 15000, marketing: 18000, operations: 20000 },
+    personalDebt: 7800,
+  },
+  {
+    month: "2025-12",
+    personalIncome: 86000,
+    personalExpenses: { housing: 19000, groceries: 12500, mobility: 12500 },
+    familyIncome: 33000,
+    familyExpenses: { groceries: 15000, utilities: 6000, education: 9000 },
+    businessIncome: 195000,
+    businessExpenses: { payroll: 75000, software: 15000, marketing: 19000, operations: 24000 },
+    personalDebt: 7800,
+  },
+  {
+    month: "2026-01",
+    personalIncome: 88000,
+    personalExpenses: { housing: 19500, groceries: 12500, mobility: 13000 },
+    familyIncome: 34000,
+    familyExpenses: { groceries: 15500, utilities: 6500, education: 9000 },
+    businessIncome: 210000,
+    businessExpenses: { payroll: 78000, software: 16000, marketing: 20000, operations: 26000 },
+    personalDebt: 7800,
+  },
+  {
+    month: "2026-02",
+    personalIncome: 90000,
+    personalExpenses: { housing: 19500, groceries: 13000, mobility: 13000 },
+    familyIncome: 35000,
+    familyExpenses: { groceries: 16000, utilities: 6500, education: 9500 },
+    businessIncome: 225000,
+    businessExpenses: { payroll: 81000, software: 17000, marketing: 21000, operations: 30000 },
+    personalDebt: 7800,
+  },
+  {
+    month: "2026-03",
+    personalIncome: 93000,
+    personalExpenses: { housing: 20000, groceries: 13500, mobility: 13500 },
+    familyIncome: 36500,
+    familyExpenses: { groceries: 16500, utilities: 7000, education: 9500 },
+    businessIncome: 245000,
+    businessExpenses: { payroll: 84000, software: 18000, marketing: 23000, operations: 32000 },
+    personalDebt: 7800,
+  },
+  {
+    month: "2026-04",
+    personalIncome: 96000,
+    personalExpenses: { housing: 20000, groceries: 14000, mobility: 14000 },
+    familyIncome: 38000,
+    familyExpenses: { groceries: 17000, utilities: 7500, education: 10000 },
+    businessIncome: 265000,
+    businessExpenses: { payroll: 88000, software: 18000, marketing: 24000, operations: 35000 },
+    personalDebt: 7800,
+  },
+];
 
 let db = null;
 
@@ -155,6 +246,14 @@ function normalizeSuggestionCategoryId(value) {
 
 function normalizeSuggestionName(value) {
   return String(value || "").trim();
+}
+
+function monthDate(monthKey, day) {
+  return `${String(monthKey)}-${String(day).padStart(2, "0")}`;
+}
+
+function monthTimestamp(monthKey, day = 1) {
+  return `${monthDate(monthKey, day)}T09:00:00.000Z`;
 }
 
 function ensureDb() {
@@ -1205,6 +1304,105 @@ async function init() {
         VALUES (?, ?, 'owner', ?)
         `,
         [DEFAULT_LOCAL_WORKSPACE_ID, seededOwnerUserId, nowIso]
+      );
+    }
+  }
+
+  const demoWorkspaceId = defaultWorkspaceId || DEFAULT_LOCAL_WORKSPACE_ID;
+  const seededDemoWorkspace = get(
+    `
+    SELECT id
+    FROM workspaces
+    WHERE id = ?
+    LIMIT 1
+    `,
+    [demoWorkspaceId]
+  );
+  if (seededDemoWorkspace?.id) {
+    let seededDemoUserId = DEMO_LOCAL_USER_ID;
+    const seededDemoUserByEmail = get(
+      `
+      SELECT id
+      FROM users
+      WHERE lower(email) = lower(?)
+      LIMIT 1
+      `,
+      [DEMO_LOCAL_USER_EMAIL]
+    );
+    if (seededDemoUserByEmail?.id) {
+      seededDemoUserId = String(seededDemoUserByEmail.id);
+      db.run(
+        `
+        UPDATE users
+        SET name = ?, password_hash = ?, updated_at = ?
+        WHERE id = ?
+        `,
+        [
+          DEMO_LOCAL_USER_NAME,
+          hashPassword(DEMO_LOCAL_USER_PASSWORD),
+          nowIso,
+          seededDemoUserId,
+        ]
+      );
+    } else {
+      const seededDemoUserById = get(
+        `
+        SELECT id
+        FROM users
+        WHERE id = ?
+        LIMIT 1
+        `,
+        [DEMO_LOCAL_USER_ID]
+      );
+      if (seededDemoUserById?.id) {
+        db.run(
+          `
+          UPDATE users
+          SET email = ?, name = ?, password_hash = ?, updated_at = ?
+          WHERE id = ?
+          `,
+          [
+            DEMO_LOCAL_USER_EMAIL,
+            DEMO_LOCAL_USER_NAME,
+            hashPassword(DEMO_LOCAL_USER_PASSWORD),
+            nowIso,
+            DEMO_LOCAL_USER_ID,
+          ]
+        );
+      } else {
+        db.run(
+          `
+          INSERT INTO users (id, email, name, password_hash, created_at, updated_at)
+          VALUES (?, ?, ?, ?, ?, ?)
+          `,
+          [
+            DEMO_LOCAL_USER_ID,
+            DEMO_LOCAL_USER_EMAIL,
+            DEMO_LOCAL_USER_NAME,
+            hashPassword(DEMO_LOCAL_USER_PASSWORD),
+            nowIso,
+            nowIso,
+          ]
+        );
+      }
+    }
+
+    const seededDemoMembership = get(
+      `
+      SELECT workspace_id, user_id
+      FROM workspace_members
+      WHERE workspace_id = ? AND user_id = ?
+      LIMIT 1
+      `,
+      [demoWorkspaceId, seededDemoUserId]
+    );
+    if (!seededDemoMembership) {
+      db.run(
+        `
+        INSERT INTO workspace_members (workspace_id, user_id, role, joined_at)
+        VALUES (?, ?, 'owner', ?)
+        `,
+        [demoWorkspaceId, seededDemoUserId, nowIso]
       );
     }
   }
@@ -2562,6 +2760,1193 @@ async function init() {
       );
     }
   }
+
+  function ensureSeedUser({ id, email, name, password }) {
+    let userId = id;
+    const byEmail = get(
+      `
+      SELECT id
+      FROM users
+      WHERE lower(email) = lower(?)
+      LIMIT 1
+      `,
+      [email]
+    );
+    if (byEmail?.id) {
+      userId = String(byEmail.id);
+      db.run(
+        `
+        UPDATE users
+        SET name = ?, password_hash = ?, updated_at = ?
+        WHERE id = ?
+        `,
+        [name, hashPassword(password), nowIso, userId]
+      );
+      return userId;
+    }
+
+    const byId = get("SELECT id FROM users WHERE id = ? LIMIT 1", [id]);
+    if (byId?.id) {
+      db.run(
+        `
+        UPDATE users
+        SET email = ?, name = ?, password_hash = ?, updated_at = ?
+        WHERE id = ?
+        `,
+        [email, name, hashPassword(password), nowIso, id]
+      );
+      return id;
+    }
+
+    db.run(
+      `
+      INSERT INTO users (id, email, name, password_hash, created_at, updated_at)
+      VALUES (?, ?, ?, ?, ?, ?)
+      `,
+      [id, email, name, hashPassword(password), nowIso, nowIso]
+    );
+    return id;
+  }
+
+  function ensureWorkspaceSeed({ id, name, createdByUserId }) {
+    const byId = get("SELECT id FROM workspaces WHERE id = ? LIMIT 1", [id]);
+    if (byId?.id) {
+      db.run(
+        `
+        UPDATE workspaces
+        SET name = ?, type = 'household', created_by_user_id = ?, updated_at = ?
+        WHERE id = ?
+        `,
+        [name, createdByUserId, nowIso, id]
+      );
+      return id;
+    }
+
+    const byName = get(
+      `
+      SELECT id
+      FROM workspaces
+      WHERE lower(name) = lower(?)
+      ORDER BY created_at ASC, id ASC
+      LIMIT 1
+      `,
+      [name]
+    );
+    if (byName?.id) {
+      const workspaceId = String(byName.id);
+      db.run(
+        `
+        UPDATE workspaces
+        SET name = ?, type = 'household', created_by_user_id = ?, updated_at = ?
+        WHERE id = ?
+        `,
+        [name, createdByUserId, nowIso, workspaceId]
+      );
+      return workspaceId;
+    }
+
+    db.run(
+      `
+      INSERT INTO workspaces (
+        id,
+        name,
+        type,
+        created_by_user_id,
+        created_at,
+        updated_at
+      )
+      VALUES (?, ?, 'household', ?, ?, ?)
+      `,
+      [id, name, createdByUserId, nowIso, nowIso]
+    );
+    return id;
+  }
+
+  function ensureWorkspaceOwner({ userId, workspaceId, exclusive = false }) {
+    if (exclusive) {
+      db.run(
+        "DELETE FROM workspace_members WHERE user_id = ? AND workspace_id <> ?",
+        [userId, workspaceId]
+      );
+    }
+    const membership = get(
+      `
+      SELECT workspace_id, user_id
+      FROM workspace_members
+      WHERE workspace_id = ? AND user_id = ?
+      LIMIT 1
+      `,
+      [workspaceId, userId]
+    );
+    if (membership) {
+      db.run(
+        `
+        UPDATE workspace_members
+        SET role = 'owner', joined_at = COALESCE(joined_at, ?)
+        WHERE workspace_id = ? AND user_id = ?
+        `,
+        [nowIso, workspaceId, userId]
+      );
+      return;
+    }
+    db.run(
+      `
+      INSERT INTO workspace_members (workspace_id, user_id, role, joined_at)
+      VALUES (?, ?, 'owner', ?)
+      `,
+      [workspaceId, userId, nowIso]
+    );
+  }
+
+  function ensureEntitySeed({ id, name, type, workspaceId }) {
+    const byId = get("SELECT id FROM entities WHERE id = ? LIMIT 1", [id]);
+    if (byId?.id) {
+      db.run(
+        `
+        UPDATE entities
+        SET name = ?, type = ?, workspace_id = ?, updated_at = ?
+        WHERE id = ?
+        `,
+        [name, type, workspaceId, nowIso, id]
+      );
+      return id;
+    }
+
+    const byName = get(
+      `
+      SELECT id
+      FROM entities
+      WHERE workspace_id = ? AND lower(name) = lower(?)
+      LIMIT 1
+      `,
+      [workspaceId, name]
+    );
+    if (byName?.id) {
+      const entityId = String(byName.id);
+      db.run(
+        `
+        UPDATE entities
+        SET name = ?, type = ?, workspace_id = ?, updated_at = ?
+        WHERE id = ?
+        `,
+        [name, type, workspaceId, nowIso, entityId]
+      );
+      return entityId;
+    }
+
+    db.run(
+      `
+      INSERT INTO entities (id, name, type, workspace_id, created_at, updated_at)
+      VALUES (?, ?, ?, ?, ?, ?)
+      `,
+      [id, name, type, workspaceId, nowIso, nowIso]
+    );
+    return id;
+  }
+
+  function resolveInstitutionId(name) {
+    if (!name) {
+      return null;
+    }
+    const institution = get(
+      "SELECT id FROM institutions WHERE lower(name) = lower(?) LIMIT 1",
+      [name]
+    );
+    return institution?.id ? String(institution.id) : null;
+  }
+
+  function ensureAccountSeed({ entityId, name, type, currencyCode = "PHP", institutionName = null }) {
+    const institutionId = resolveInstitutionId(institutionName);
+    const existing = get(
+      `
+      SELECT id
+      FROM accounts
+      WHERE entity_id = ? AND lower(name) = lower(?)
+      LIMIT 1
+      `,
+      [entityId, name]
+    );
+    if (existing?.id) {
+      const accountId = Number(existing.id);
+      db.run(
+        `
+        UPDATE accounts
+        SET type = ?, institution_id = ?, currency_code = ?
+        WHERE id = ?
+        `,
+        [type, institutionId, currencyCode, accountId]
+      );
+      return accountId;
+    }
+
+    const insert = run(
+      `
+      INSERT INTO accounts (name, type, entity_id, institution_id, currency_code, created_at)
+      VALUES (?, ?, ?, ?, ?, ?)
+      `,
+      [name, type, entityId, institutionId, currencyCode, nowIso]
+    );
+    return Number(insert.lastID);
+  }
+
+  function ensureEntityPreference(entityId, accountId) {
+    db.run(
+      `
+      INSERT INTO entity_account_preferences (
+        entity_id,
+        default_expense_account_id,
+        default_income_account_id
+      )
+      VALUES (?, ?, ?)
+      ON CONFLICT(entity_id)
+      DO UPDATE SET
+        default_expense_account_id = excluded.default_expense_account_id,
+        default_income_account_id = excluded.default_income_account_id
+      `,
+      [entityId, accountId, accountId]
+    );
+  }
+
+  function ensureCategorySeed(table, { name, color, icon = null }) {
+    const existing = get(`SELECT id FROM ${table} WHERE lower(name) = lower(?) LIMIT 1`, [name]);
+    if (existing?.id) {
+      db.run(`UPDATE ${table} SET color = ?, icon = ? WHERE id = ?`, [color, icon, existing.id]);
+      return Number(existing.id);
+    }
+    const insert = run(
+      `INSERT INTO ${table} (name, color, icon) VALUES (?, ?, ?)`,
+      [name, color, icon]
+    );
+    return Number(insert.lastID);
+  }
+
+  function ensureInitialBalance({ accountId, amountCents, createdAt }) {
+    const existing = get(
+      `
+      SELECT id
+      FROM transactions
+      WHERE type = 'initial_balance' AND to_account_id = ?
+      LIMIT 1
+      `,
+      [accountId]
+    );
+    if (existing?.id) {
+      db.run(
+        `
+        UPDATE transactions
+        SET amount_cents = ?, category = 'Opening Balance', note = 'Opening balance', created_at = ?
+        WHERE id = ?
+        `,
+        [amountCents, createdAt, existing.id]
+      );
+      return;
+    }
+    db.run(
+      `
+      INSERT INTO transactions (
+        type,
+        amount_cents,
+        from_account_id,
+        to_account_id,
+        category,
+        note,
+        created_at
+      )
+      VALUES ('initial_balance', ?, NULL, ?, 'Opening Balance', 'Opening balance', ?)
+      `,
+      [amountCents, accountId, createdAt]
+    );
+  }
+
+  function ensureIncomeSeed({ entityId, amount, source, receivedDate, categoryId, toAccountId }) {
+    const existing = get(
+      `
+      SELECT id
+      FROM income
+      WHERE entity_id = ? AND received_date = ? AND source = ?
+      LIMIT 1
+      `,
+      [entityId, receivedDate, source]
+    );
+    if (existing?.id) {
+      db.run(
+        `
+        UPDATE income
+        SET amount = ?, income_category_id = ?, to_account_id = ?, entity_id = ?
+        WHERE id = ?
+        `,
+        [amount, categoryId, toAccountId, entityId, existing.id]
+      );
+      return;
+    }
+    db.run(
+      `
+      INSERT INTO income (amount, source, received_date, income_category_id, entity_id, to_account_id)
+      VALUES (?, ?, ?, ?, ?, ?)
+      `,
+      [amount, source, receivedDate, categoryId, entityId, toAccountId]
+    );
+  }
+
+  function ensureExpenseSeed({
+    entityId,
+    amount,
+    category,
+    notes,
+    spentAt,
+    categoryId,
+    expectation,
+    fromAccountId,
+  }) {
+    const existing = get(
+      `
+      SELECT id
+      FROM expenses
+      WHERE entity_id = ? AND spent_at = ? AND category = ? AND COALESCE(notes, '') = COALESCE(?, '')
+      LIMIT 1
+      `,
+      [entityId, spentAt, category, notes]
+    );
+    if (existing?.id) {
+      db.run(
+        `
+        UPDATE expenses
+        SET amount = ?, expense_category_id = ?, expense_expectation = ?, from_account_id = ?, created_at = ?
+        WHERE id = ?
+        `,
+        [amount, categoryId, expectation, fromAccountId, monthTimestamp(spentAt.slice(0, 7), 1), existing.id]
+      );
+      return;
+    }
+    db.run(
+      `
+      INSERT INTO expenses (
+        amount,
+        category,
+        notes,
+        spent_at,
+        created_at,
+        expense_category_id,
+        expense_expectation,
+        entity_id,
+        from_account_id
+      )
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+      `,
+      [
+        amount,
+        category,
+        notes,
+        spentAt,
+        monthTimestamp(spentAt.slice(0, 7), 1),
+        categoryId,
+        expectation,
+        entityId,
+        fromAccountId,
+      ]
+    );
+  }
+
+  function ensureDebtSeed({
+    entityId,
+    amount,
+    name,
+    loanOrigin,
+    notes,
+    spentAt,
+    statementMonth,
+    debtCategoryId,
+  }) {
+    const existing = get(
+      `
+      SELECT id
+      FROM debts
+      WHERE entity_id = ? AND spent_at = ? AND name = ?
+      LIMIT 1
+      `,
+      [entityId, spentAt, name]
+    );
+    if (existing?.id) {
+      db.run(
+        `
+        UPDATE debts
+        SET amount = ?, loan_origin = ?, notes = ?, statement_month = ?, created_at = ?, debt_category_id = ?
+        WHERE id = ?
+        `,
+        [amount, loanOrigin, notes, statementMonth, monthTimestamp(statementMonth, 1), debtCategoryId, existing.id]
+      );
+      return;
+    }
+    db.run(
+      `
+      INSERT INTO debts (
+        amount,
+        name,
+        loan_origin,
+        notes,
+        spent_at,
+        statement_month,
+        created_at,
+        debt_category_id,
+        entity_id
+      )
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+      `,
+      [amount, name, loanOrigin, notes, spentAt, statementMonth, monthTimestamp(statementMonth, 1), debtCategoryId, entityId]
+    );
+  }
+
+  function ensureTransferSeed({
+    id,
+    fromAccountId,
+    toAccountId,
+    amountCents,
+    transferDate,
+    notes,
+  }) {
+    const existing = get("SELECT id FROM transfers WHERE id = ? LIMIT 1", [id]);
+    if (existing?.id) {
+      db.run(
+        `
+        UPDATE transfers
+        SET
+          from_account_id = ?,
+          to_account_id = ?,
+          amount_cents = ?,
+          transfer_fee_cents = 0,
+          fee_expense_id = NULL,
+          mirror_as_income_expense = 0,
+          expense_category_id = NULL,
+          income_category_id = NULL,
+          bookkeeping_expense_id = NULL,
+          bookkeeping_income_id = NULL,
+          transfer_date = ?,
+          notes = ?,
+          updated_at = ?
+        WHERE id = ?
+        `,
+        [fromAccountId, toAccountId, amountCents, transferDate, notes, nowIso, id]
+      );
+      return;
+    }
+    db.run(
+      `
+      INSERT INTO transfers (
+        id,
+        from_account_id,
+        to_account_id,
+        amount_cents,
+        transfer_fee_cents,
+        fee_expense_id,
+        mirror_as_income_expense,
+        expense_category_id,
+        income_category_id,
+        bookkeeping_expense_id,
+        bookkeeping_income_id,
+        transfer_date,
+        notes,
+        created_at,
+        updated_at
+      )
+      VALUES (?, ?, ?, ?, 0, NULL, 0, NULL, NULL, NULL, NULL, ?, ?, ?, ?)
+      `,
+      [id, fromAccountId, toAccountId, amountCents, transferDate, notes, nowIso, nowIso]
+    );
+  }
+
+  function ensureRecurringSeed({
+    type,
+    entityId,
+    amount,
+    category,
+    expenseCategoryId = null,
+    incomeCategoryId = null,
+    fromAccountId = null,
+    toAccountId = null,
+    description,
+    frequency,
+    nextDueDate,
+  }) {
+    const existing = get(
+      `
+      SELECT id
+      FROM recurring_items
+      WHERE entity_id = ? AND type = ? AND description = ?
+      LIMIT 1
+      `,
+      [entityId, type, description]
+    );
+    if (existing?.id) {
+      db.run(
+        `
+        UPDATE recurring_items
+        SET
+          amount = ?,
+          category = ?,
+          expense_category_id = ?,
+          income_category_id = ?,
+          from_account_id = ?,
+          to_account_id = ?,
+          frequency = ?,
+          next_due_date = ?
+        WHERE id = ?
+        `,
+        [amount, category, expenseCategoryId, incomeCategoryId, fromAccountId, toAccountId, frequency, nextDueDate, existing.id]
+      );
+      return;
+    }
+    db.run(
+      `
+      INSERT INTO recurring_items (
+        type,
+        entity_id,
+        amount,
+        category,
+        expense_category_id,
+        income_category_id,
+        from_account_id,
+        to_account_id,
+        mirror_as_income_expense,
+        transfer_fee_amount,
+        description,
+        frequency,
+        next_due_date,
+        last_confirmed_date
+      )
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, 0, 0, ?, ?, ?, NULL)
+      `,
+      [type, entityId, amount, category, expenseCategoryId, incomeCategoryId, fromAccountId, toAccountId, description, frequency, nextDueDate]
+    );
+  }
+
+  function ensureBudgetSeed({
+    entityId,
+    name,
+    category,
+    targetAmount,
+    paymentPlan,
+    paymentFrequency,
+    paymentAmount,
+    paymentCount = null,
+    startDate,
+    targetDate = null,
+    notes = null,
+  }) {
+    const existing = get(
+      `
+      SELECT id
+      FROM budgets
+      WHERE entity_id = ? AND name = ?
+      LIMIT 1
+      `,
+      [entityId, name]
+    );
+    if (existing?.id) {
+      db.run(
+        `
+        UPDATE budgets
+        SET
+          category = ?,
+          target_amount = ?,
+          payment_plan = ?,
+          payment_frequency = ?,
+          payment_amount = ?,
+          payment_count = ?,
+          start_date = ?,
+          target_date = ?,
+          notes = ?,
+          is_active = 1,
+          updated_at = ?
+        WHERE id = ?
+        `,
+        [category, targetAmount, paymentPlan, paymentFrequency, paymentAmount, paymentCount, startDate, targetDate, notes, nowIso, existing.id]
+      );
+      return;
+    }
+    db.run(
+      `
+      INSERT INTO budgets (
+        entity_id,
+        name,
+        category,
+        target_amount,
+        payment_plan,
+        payment_frequency,
+        payment_amount,
+        payment_count,
+        start_date,
+        target_date,
+        notes,
+        is_active,
+        created_at,
+        updated_at,
+        budget_items_json
+      )
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1, ?, ?, '[]')
+      `,
+      [entityId, name, category, targetAmount, paymentPlan, paymentFrequency, paymentAmount, paymentCount, startDate, targetDate, notes, nowIso, nowIso]
+    );
+  }
+
+  function ensureLifeInsuranceSeed({
+    entityId,
+    provider,
+    policyName,
+    insuredPerson,
+    coverageAmount,
+    cashSurrenderValue,
+    premiumAmount,
+    paymentFrequency,
+    renewalDate,
+    notes = null,
+  }) {
+    const existing = get(
+      `
+      SELECT id
+      FROM life_insurances
+      WHERE entity_id = ? AND provider = ? AND policy_name = ?
+      LIMIT 1
+      `,
+      [entityId, provider, policyName]
+    );
+    if (existing?.id) {
+      db.run(
+        `
+        UPDATE life_insurances
+        SET
+          insured_person = ?,
+          coverage_amount = ?,
+          cash_surrender_value = ?,
+          premium_amount = ?,
+          payment_frequency = ?,
+          renewal_date = ?,
+          notes = ?,
+          is_active = 1,
+          updated_at = ?
+        WHERE id = ?
+        `,
+        [insuredPerson, coverageAmount, cashSurrenderValue, premiumAmount, paymentFrequency, renewalDate, notes, nowIso, existing.id]
+      );
+      return;
+    }
+    db.run(
+      `
+      INSERT INTO life_insurances (
+        entity_id,
+        provider,
+        policy_name,
+        insured_person,
+        coverage_amount,
+        cash_surrender_value,
+        premium_amount,
+        payment_frequency,
+        renewal_date,
+        notes,
+        is_active,
+        created_at,
+        updated_at
+      )
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1, ?, ?)
+      `,
+      [entityId, provider, policyName, insuredPerson, coverageAmount, cashSurrenderValue, premiumAmount, paymentFrequency, renewalDate, notes, nowIso, nowIso]
+    );
+  }
+
+  function ensureProjectionSeed({
+    id,
+    workspaceId,
+    entityId,
+    name,
+    initialAmount,
+    annualInterestRate,
+    durationMonths,
+    monthlyContribution,
+    notes = null,
+  }) {
+    const existing = get("SELECT id FROM projection_scenarios WHERE id = ? LIMIT 1", [id]);
+    if (existing?.id) {
+      db.run(
+        `
+        UPDATE projection_scenarios
+        SET
+          workspace_id = ?,
+          entity_id = ?,
+          name = ?,
+          type = 'SAVINGS',
+          currency = 'PHP',
+          initial_amount = ?,
+          annual_interest_rate = ?,
+          duration_months = ?,
+          monthly_contribution = ?,
+          compounding_frequency = 'monthly',
+          cashflow_assumptions_json = '{}',
+          notes = ?,
+          updated_at = ?
+        WHERE id = ?
+        `,
+        [workspaceId, entityId, name, initialAmount, annualInterestRate, durationMonths, monthlyContribution, notes, nowIso, id]
+      );
+      return;
+    }
+    db.run(
+      `
+      INSERT INTO projection_scenarios (
+        id,
+        workspace_id,
+        entity_id,
+        name,
+        type,
+        currency,
+        initial_amount,
+        annual_interest_rate,
+        duration_months,
+        monthly_contribution,
+        compounding_frequency,
+        cashflow_assumptions_json,
+        notes,
+        created_at,
+        updated_at
+      )
+      VALUES (?, ?, ?, ?, 'SAVINGS', 'PHP', ?, ?, ?, ?, 'monthly', '{}', ?, ?, ?)
+      `,
+      [id, workspaceId, entityId, name, initialAmount, annualInterestRate, durationMonths, monthlyContribution, notes, nowIso, nowIso]
+    );
+  }
+
+  const showcaseDemoUserId = ensureSeedUser({
+    id: DEMO_LOCAL_USER_ID,
+    email: DEMO_LOCAL_USER_EMAIL,
+    name: DEMO_LOCAL_USER_NAME,
+    password: DEMO_LOCAL_USER_PASSWORD,
+  });
+  const showcaseDemoWorkspaceId = ensureWorkspaceSeed({
+    id: DEMO_SHOWCASE_WORKSPACE_ID,
+    name: DEMO_SHOWCASE_WORKSPACE_NAME,
+    createdByUserId: showcaseDemoUserId,
+  });
+  ensureWorkspaceOwner({
+    userId: showcaseDemoUserId,
+    workspaceId: showcaseDemoWorkspaceId,
+    exclusive: true,
+  });
+
+  const demoBlankUserId = ensureSeedUser({
+    id: DEMO_BLANK_USER_ID,
+    email: DEMO_BLANK_USER_EMAIL,
+    name: DEMO_BLANK_USER_NAME,
+    password: DEMO_BLANK_USER_PASSWORD,
+  });
+  const demoBlankWorkspaceId = ensureWorkspaceSeed({
+    id: DEMO_BLANK_WORKSPACE_ID,
+    name: DEMO_BLANK_WORKSPACE_NAME,
+    createdByUserId: demoBlankUserId,
+  });
+  ensureWorkspaceOwner({
+    userId: demoBlankUserId,
+    workspaceId: demoBlankWorkspaceId,
+    exclusive: true,
+  });
+
+  const showcaseEntities = DEMO_SHOWCASE_ENTITY_SEEDS.map((seed) => ({
+    ...seed,
+    resolvedId: ensureEntitySeed({
+      id: seed.id,
+      name: seed.name,
+      type: seed.type,
+      workspaceId: showcaseDemoWorkspaceId,
+    }),
+  }));
+  const showcasePersonalEntityId = showcaseEntities.find((item) => item.type === "personal")?.resolvedId;
+  const showcaseFamilyEntityId = showcaseEntities.find((item) => item.type === "family")?.resolvedId;
+  const showcaseBusinessEntityId = showcaseEntities.find((item) => item.type === "business")?.resolvedId;
+
+  const expenseCategoryIds = {
+    housing: ensureCategorySeed("categories", {
+      name: "Housing",
+      color: CATEGORY_COLOR_SWATCHES[0],
+      icon: "ri-home-5-line",
+    }),
+    groceries: ensureCategorySeed("categories", {
+      name: "Groceries",
+      color: CATEGORY_COLOR_SWATCHES[1],
+      icon: "ri-shopping-basket-line",
+    }),
+    mobility: ensureCategorySeed("categories", {
+      name: "Mobility",
+      color: CATEGORY_COLOR_SWATCHES[2],
+      icon: "ri-taxi-line",
+    }),
+    utilities: ensureCategorySeed("categories", {
+      name: "Home Utilities",
+      color: CATEGORY_COLOR_SWATCHES[3],
+      icon: "ri-lightbulb-flash-line",
+    }),
+    education: ensureCategorySeed("categories", {
+      name: "Education",
+      color: CATEGORY_COLOR_SWATCHES[4],
+      icon: "ri-graduation-cap-line",
+    }),
+    payroll: ensureCategorySeed("categories", {
+      name: "Payroll",
+      color: CATEGORY_COLOR_SWATCHES[5],
+      icon: "ri-briefcase-4-line",
+    }),
+    software: ensureCategorySeed("categories", {
+      name: "Software",
+      color: CATEGORY_COLOR_SWATCHES[6],
+      icon: "ri-computer-line",
+    }),
+    marketing: ensureCategorySeed("categories", {
+      name: "Marketing",
+      color: CATEGORY_COLOR_SWATCHES[7],
+      icon: "ri-megaphone-line",
+    }),
+    operations: ensureCategorySeed("categories", {
+      name: "Operations",
+      color: CATEGORY_COLOR_SWATCHES[8],
+      icon: "ri-settings-3-line",
+    }),
+    carLoan: ensureCategorySeed("categories", {
+      name: "Car Loan",
+      color: CATEGORY_COLOR_SWATCHES[9],
+      icon: "ri-car-line",
+    }),
+    insurance: ensureCategorySeed("categories", {
+      name: "Insurance",
+      color: CATEGORY_COLOR_SWATCHES[10],
+      icon: "ri-shield-check-line",
+    }),
+  };
+
+  const incomeCategoryIds = {
+    salary: ensureCategorySeed("income_categories", {
+      name: "Consulting Retainer",
+      color: CATEGORY_COLOR_SWATCHES[11],
+      icon: "ri-money-dollar-circle-line",
+    }),
+    rental: ensureCategorySeed("income_categories", {
+      name: "Rental Income",
+      color: CATEGORY_COLOR_SWATCHES[12],
+      icon: "ri-building-line",
+    }),
+    business: ensureCategorySeed("income_categories", {
+      name: "Business Revenue",
+      color: CATEGORY_COLOR_SWATCHES[13],
+      icon: "ri-line-chart-line",
+    }),
+  };
+
+  const showcaseAccounts = {
+    personalBank: ensureAccountSeed({
+      entityId: showcasePersonalEntityId,
+      name: "BPI Everyday",
+      type: "bank",
+      institutionName: "Bank of the Philippine Islands",
+    }),
+    familyBank: ensureAccountSeed({
+      entityId: showcaseFamilyEntityId,
+      name: "PNB Household Reserve",
+      type: "bank",
+      institutionName: "Philippine National Bank",
+    }),
+    businessBank: ensureAccountSeed({
+      entityId: showcaseBusinessEntityId,
+      name: "BDO Operating",
+      type: "bank",
+      institutionName: "Banco De Oro",
+    }),
+  };
+
+  ensureEntityPreference(showcasePersonalEntityId, showcaseAccounts.personalBank);
+  ensureEntityPreference(showcaseFamilyEntityId, showcaseAccounts.familyBank);
+  ensureEntityPreference(showcaseBusinessEntityId, showcaseAccounts.businessBank);
+
+  ensureInitialBalance({
+    accountId: showcaseAccounts.personalBank,
+    amountCents: 12000000,
+    createdAt: "2025-10-31T09:00:00.000Z",
+  });
+  ensureInitialBalance({
+    accountId: showcaseAccounts.familyBank,
+    amountCents: 8000000,
+    createdAt: "2025-10-31T09:15:00.000Z",
+  });
+  ensureInitialBalance({
+    accountId: showcaseAccounts.businessBank,
+    amountCents: 25000000,
+    createdAt: "2025-10-31T09:30:00.000Z",
+  });
+
+  DEMO_SHOWCASE_MONTHLY_SEEDS.forEach((seed) => {
+    ensureIncomeSeed({
+      entityId: showcasePersonalEntityId,
+      amount: seed.personalIncome,
+      source: "Steward Product Consulting",
+      receivedDate: monthDate(seed.month, 28),
+      categoryId: incomeCategoryIds.salary,
+      toAccountId: showcaseAccounts.personalBank,
+    });
+    ensureIncomeSeed({
+      entityId: showcaseFamilyEntityId,
+      amount: seed.familyIncome,
+      source: "Rental and dividend income",
+      receivedDate: monthDate(seed.month, 5),
+      categoryId: incomeCategoryIds.rental,
+      toAccountId: showcaseAccounts.familyBank,
+    });
+    ensureIncomeSeed({
+      entityId: showcaseBusinessEntityId,
+      amount: seed.businessIncome,
+      source: "Client retainers and product sales",
+      receivedDate: monthDate(seed.month, 27),
+      categoryId: incomeCategoryIds.business,
+      toAccountId: showcaseAccounts.businessBank,
+    });
+
+    ensureExpenseSeed({
+      entityId: showcasePersonalEntityId,
+      amount: seed.personalExpenses.housing,
+      category: "Housing",
+      notes: "Condo rent and association dues",
+      spentAt: monthDate(seed.month, 2),
+      categoryId: expenseCategoryIds.housing,
+      expectation: "expected",
+      fromAccountId: showcaseAccounts.personalBank,
+    });
+    ensureExpenseSeed({
+      entityId: showcasePersonalEntityId,
+      amount: seed.personalExpenses.groceries,
+      category: "Groceries",
+      notes: "Groceries, coffee, and home restock",
+      spentAt: monthDate(seed.month, 10),
+      categoryId: expenseCategoryIds.groceries,
+      expectation: "expected",
+      fromAccountId: showcaseAccounts.personalBank,
+    });
+    ensureExpenseSeed({
+      entityId: showcasePersonalEntityId,
+      amount: seed.personalExpenses.mobility,
+      category: "Mobility",
+      notes: "Fuel, rides, and wellness memberships",
+      spentAt: monthDate(seed.month, 18),
+      categoryId: expenseCategoryIds.mobility,
+      expectation: "expected",
+      fromAccountId: showcaseAccounts.personalBank,
+    });
+
+    ensureExpenseSeed({
+      entityId: showcaseFamilyEntityId,
+      amount: seed.familyExpenses.groceries,
+      category: "Groceries",
+      notes: "Weekly groceries and home supplies",
+      spentAt: monthDate(seed.month, 8),
+      categoryId: expenseCategoryIds.groceries,
+      expectation: "expected",
+      fromAccountId: showcaseAccounts.familyBank,
+    });
+    ensureExpenseSeed({
+      entityId: showcaseFamilyEntityId,
+      amount: seed.familyExpenses.utilities,
+      category: "Utilities",
+      notes: "Electricity, water, and internet",
+      spentAt: monthDate(seed.month, 14),
+      categoryId: expenseCategoryIds.utilities,
+      expectation: "expected",
+      fromAccountId: showcaseAccounts.familyBank,
+    });
+    ensureExpenseSeed({
+      entityId: showcaseFamilyEntityId,
+      amount: seed.familyExpenses.education,
+      category: "Education",
+      notes: "School tuition, books, and workshops",
+      spentAt: monthDate(seed.month, 22),
+      categoryId: expenseCategoryIds.education,
+      expectation: "expected",
+      fromAccountId: showcaseAccounts.familyBank,
+    });
+
+    ensureExpenseSeed({
+      entityId: showcaseBusinessEntityId,
+      amount: seed.businessExpenses.payroll,
+      category: "Payroll",
+      notes: "Core team payroll",
+      spentAt: monthDate(seed.month, 5),
+      categoryId: expenseCategoryIds.payroll,
+      expectation: "expected",
+      fromAccountId: showcaseAccounts.businessBank,
+    });
+    ensureExpenseSeed({
+      entityId: showcaseBusinessEntityId,
+      amount: seed.businessExpenses.software,
+      category: "Software",
+      notes: "Design, finance, and collaboration tools",
+      spentAt: monthDate(seed.month, 9),
+      categoryId: expenseCategoryIds.software,
+      expectation: "expected",
+      fromAccountId: showcaseAccounts.businessBank,
+    });
+    ensureExpenseSeed({
+      entityId: showcaseBusinessEntityId,
+      amount: seed.businessExpenses.marketing,
+      category: "Marketing",
+      notes: "Paid campaigns and content production",
+      spentAt: monthDate(seed.month, 16),
+      categoryId: expenseCategoryIds.marketing,
+      expectation: "expected",
+      fromAccountId: showcaseAccounts.businessBank,
+    });
+    ensureExpenseSeed({
+      entityId: showcaseBusinessEntityId,
+      amount: seed.businessExpenses.operations,
+      category: "Operations",
+      notes: "Operations, contractors, and fulfillment",
+      spentAt: monthDate(seed.month, 23),
+      categoryId: expenseCategoryIds.operations,
+      expectation: "expected",
+      fromAccountId: showcaseAccounts.businessBank,
+    });
+
+    ensureDebtSeed({
+      entityId: showcasePersonalEntityId,
+      amount: seed.personalDebt,
+      name: "BPI Auto Loan",
+      loanOrigin: "BPI Auto Loan",
+      notes: "Monthly amortization for family car",
+      spentAt: monthDate(seed.month, 15),
+      statementMonth: seed.month,
+      debtCategoryId: expenseCategoryIds.carLoan,
+    });
+  });
+
+  ensureTransferSeed({
+    id: "55555555-5555-4555-8555-555555555501",
+    fromAccountId: showcaseAccounts.personalBank,
+    toAccountId: showcaseAccounts.businessBank,
+    amountCents: 3000000,
+    transferDate: "2025-11-12",
+    notes: "Owner capital injection",
+  });
+  ensureTransferSeed({
+    id: "55555555-5555-4555-8555-555555555502",
+    fromAccountId: showcaseAccounts.personalBank,
+    toAccountId: showcaseAccounts.familyBank,
+    amountCents: 1000000,
+    transferDate: "2025-12-10",
+    notes: "Holiday family fund",
+  });
+  ensureTransferSeed({
+    id: "55555555-5555-4555-8555-555555555503",
+    fromAccountId: showcaseAccounts.familyBank,
+    toAccountId: showcaseAccounts.businessBank,
+    amountCents: 500000,
+    transferDate: "2026-02-08",
+    notes: "Family angel top-up",
+  });
+  ensureTransferSeed({
+    id: "55555555-5555-4555-8555-555555555504",
+    fromAccountId: showcaseAccounts.businessBank,
+    toAccountId: showcaseAccounts.familyBank,
+    amountCents: 2000000,
+    transferDate: "2026-04-22",
+    notes: "Quarterly family distribution",
+  });
+
+  ensureExpenseSeed({
+    entityId: showcasePersonalEntityId,
+    amount: 1800,
+    category: "Insurance",
+    notes: "Monthly critical illness premium",
+    spentAt: "2026-04-06",
+    categoryId: expenseCategoryIds.insurance,
+    expectation: "expected",
+    fromAccountId: showcaseAccounts.personalBank,
+  });
+
+  ensureRecurringSeed({
+    type: "income",
+    entityId: showcasePersonalEntityId,
+    amount: 96000,
+    category: "Salary",
+    incomeCategoryId: incomeCategoryIds.salary,
+    toAccountId: showcaseAccounts.personalBank,
+    description: "Monthly consulting retainer",
+    frequency: "monthly",
+    nextDueDate: "2026-05-28",
+  });
+  ensureRecurringSeed({
+    type: "expense",
+    entityId: showcaseFamilyEntityId,
+    amount: 7500,
+    category: "Utilities",
+    expenseCategoryId: expenseCategoryIds.utilities,
+    fromAccountId: showcaseAccounts.familyBank,
+    description: "Utilities autopay",
+    frequency: "monthly",
+    nextDueDate: "2026-05-14",
+  });
+  ensureRecurringSeed({
+    type: "expense",
+    entityId: showcaseBusinessEntityId,
+    amount: 18000,
+    category: "Software",
+    expenseCategoryId: expenseCategoryIds.software,
+    fromAccountId: showcaseAccounts.businessBank,
+    description: "Software stack renewal",
+    frequency: "monthly",
+    nextDueDate: "2026-05-09",
+  });
+
+  ensureBudgetSeed({
+    entityId: showcaseFamilyEntityId,
+    name: "Japan Trip Fund",
+    category: "Travel",
+    targetAmount: 180000,
+    paymentPlan: "installment",
+    paymentFrequency: "monthly",
+    paymentAmount: 15000,
+    paymentCount: 12,
+    startDate: "2026-01-01",
+    targetDate: "2026-12-01",
+    notes: "Family trip target for year-end break",
+  });
+  ensureBudgetSeed({
+    entityId: showcaseBusinessEntityId,
+    name: "Studio Camera Upgrade",
+    category: "Operations",
+    targetAmount: 240000,
+    paymentPlan: "installment",
+    paymentFrequency: "monthly",
+    paymentAmount: 20000,
+    paymentCount: 12,
+    startDate: "2026-03-01",
+    targetDate: "2027-02-01",
+    notes: "Capex reserve for the next production rig",
+  });
+
+  ensureLifeInsuranceSeed({
+    entityId: showcasePersonalEntityId,
+    provider: "Sun Life",
+    policyName: "Life Secure Plus",
+    insuredPerson: "Marco Alvarez",
+    coverageAmount: 3000000,
+    cashSurrenderValue: 185000,
+    premiumAmount: 1800,
+    paymentFrequency: "monthly",
+    renewalDate: "2026-11-15",
+    notes: "Term coverage paired with emergency reserve planning",
+  });
+
+  ensureProjectionSeed({
+    id: "66666666-6666-4666-8666-666666666601",
+    workspaceId: showcaseDemoWorkspaceId,
+    entityId: showcaseFamilyEntityId,
+    name: "Family Emergency Fund 18M",
+    initialAmount: 134000,
+    annualInterestRate: 4.25,
+    durationMonths: 18,
+    monthlyContribution: 12000,
+    notes: "Base case forecast using current family surplus.",
+  });
 
   if (hasExpenseCreatedAt) {
     db.run(

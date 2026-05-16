@@ -24,6 +24,23 @@ import type {
 
 const STORAGE_KEY = "financr-v1-selected-entity";
 
+function getScopedEntityStorageKey(workspaceId: string) {
+  return `${STORAGE_KEY}:${workspaceId}`;
+}
+
+function readSelectedEntityId(workspaceId: string) {
+  if (typeof window === "undefined") {
+    return ALL_ENTITIES_ID;
+  }
+  if (!workspaceId) {
+    return window.localStorage.getItem(STORAGE_KEY) || ALL_ENTITIES_ID;
+  }
+  return (
+    window.localStorage.getItem(getScopedEntityStorageKey(workspaceId)) ||
+    ALL_ENTITIES_ID
+  );
+}
+
 type FinanceContextValue = {
   loading: boolean;
   error: string;
@@ -99,9 +116,7 @@ export function FinanceDataProvider({ children }: { children: React.ReactNode })
   const [loading, setLoading] = React.useState(true);
   const [error, setError] = React.useState("");
   const [notice, setNotice] = React.useState("");
-  const [selectedEntityId, setSelectedEntityIdState] = React.useState(() => {
-    return window.localStorage.getItem(STORAGE_KEY) || ALL_ENTITIES_ID;
-  });
+  const [selectedEntityId, setSelectedEntityIdState] = React.useState(ALL_ENTITIES_ID);
   const [settings, setSettings] = React.useState<SettingsRecord | null>(null);
   const [entities, setEntities] = React.useState<EntityRecord[]>([]);
   const [accounts, setAccounts] = React.useState<AccountRecord[]>([]);
@@ -119,11 +134,27 @@ export function FinanceDataProvider({ children }: { children: React.ReactNode })
 
   const currentMonth = currentMonthKey();
 
-  const setSelectedEntityId = React.useCallback((value: string) => {
-    const nextValue = value || ALL_ENTITIES_ID;
-    window.localStorage.setItem(STORAGE_KEY, nextValue);
-    setSelectedEntityIdState(nextValue);
-  }, []);
+  const setSelectedEntityId = React.useCallback(
+    (value: string) => {
+      const nextValue = value || ALL_ENTITIES_ID;
+      if (typeof window !== "undefined") {
+        if (activeWorkspaceId) {
+          window.localStorage.setItem(
+            getScopedEntityStorageKey(activeWorkspaceId),
+            nextValue
+          );
+        } else {
+          window.localStorage.setItem(STORAGE_KEY, nextValue);
+        }
+      }
+      setSelectedEntityIdState(nextValue);
+    },
+    [activeWorkspaceId]
+  );
+
+  React.useEffect(() => {
+    setSelectedEntityIdState(readSelectedEntityId(activeWorkspaceId));
+  }, [activeWorkspaceId]);
 
   const refresh = React.useCallback(async () => {
     if (!currentUser || !activeWorkspaceId) {

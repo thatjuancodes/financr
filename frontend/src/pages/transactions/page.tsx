@@ -366,7 +366,6 @@ export default function Transactions() {
     () =>
       Array.from(
         new Set([
-          currentMonth,
           ...allRows.map((transaction) => monthKey(transaction.created_at)),
           ...expenseRows.map((transaction) => monthKey(transaction.created_at)),
           ...debtRows.map((transaction) => getDebtRowMonthKey(transaction, loanOriginConfigMap)),
@@ -374,7 +373,7 @@ export default function Transactions() {
       )
         .filter(Boolean)
         .sort((left, right) => right.localeCompare(left)),
-    [allRows, currentMonth, debtRows, expenseRows, loanOriginConfigMap]
+    [allRows, debtRows, expenseRows, loanOriginConfigMap]
   );
   const expenseCategoryMetaByName = useMemo(
     () => buildCategoryMetaByName(categories, "expense-category"),
@@ -462,6 +461,19 @@ export default function Transactions() {
       setSelectedAccountId("");
     }
   }, [accountFilterOptions, selectedAccountId]);
+
+  useEffect(() => {
+    const options = activeType === "debt" ? debtCycleMonths : monthOptions;
+    if (options.length === 0) {
+      if (selectedMonth !== "") {
+        setSelectedMonth("");
+      }
+      return;
+    }
+    if (!selectedMonth || !options.includes(selectedMonth)) {
+      setSelectedMonth(options[0]);
+    }
+  }, [activeType, debtCycleMonths, monthOptions, selectedMonth]);
 
   useEffect(() => {
     let isActive = true;
