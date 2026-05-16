@@ -8,6 +8,7 @@ import ImportBatchDetailPage from "../pages/imports/detail-page";
 import Recurring from "../pages/recurring/page";
 import Reporting from "../pages/reporting/page";
 import ReportDetailPage from "../pages/reporting/detail-page";
+import ReportPrintPage from "../pages/reporting/print-page";
 import Settings from "../pages/settings/page";
 import DesignSystem from "../pages/design/page";
 import Notifications from "../pages/notifications/page";
@@ -75,6 +76,10 @@ const routes: RouteObject[] = [
       {
         path: "/reporting/:monthKey",
         element: <ReportDetailPage />,
+      },
+      {
+        path: "/reporting/:monthKey/print",
+        element: <ReportPrintPage />,
       },
       {
         path: "/notifications",
