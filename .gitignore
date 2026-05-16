@@ -5,3 +5,4 @@ frontend/node_modules/
 .pids/
 backend/data/finance.db
 backups/
+*.DS_Store

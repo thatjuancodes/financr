@@ -12,6 +12,7 @@ export default function HouseholdSwitcher() {
   const { entities, selectedEntityId, setSelectedEntityId } = useFinanceData();
   const { activeWorkspaceId, switchWorkspace, workspaces } = useWorkspace();
   const [open, setOpen] = useState(false);
+  const [entitiesOpen, setEntitiesOpen] = useState(false);
   const ref = useRef<HTMLDivElement | null>(null);
 
   useEffect(() => {
@@ -28,6 +29,12 @@ export default function HouseholdSwitcher() {
     return () => {
       document.removeEventListener("mousedown", handleOutsideClick);
     };
+  }, [open]);
+
+  useEffect(() => {
+    if (!open) {
+      setEntitiesOpen(false);
+    }
   }, [open]);
 
   if (workspaces.length === 0) {
@@ -111,39 +118,56 @@ export default function HouseholdSwitcher() {
 
           <div className="my-2 border-t border-bg-subtle" />
 
-          <div className="px-2 py-1">
-            <p className="text-2xs font-medium uppercase tracking-wide text-text-muted">
-              Switch Entity
-            </p>
-          </div>
-          <div className="space-y-0.5">
-            {entityOptions.map((entity) => {
-              const active = entity.id === selectedEntityId;
-              return (
-                <button
-                  key={entity.id}
-                  type="button"
-                  onClick={() => {
-                    setSelectedEntityId(entity.id);
-                    setOpen(false);
-                  }}
-                  className={`flex w-full items-center justify-between rounded-lg px-3 py-2 text-left transition-colors ${
-                    active
-                      ? "bg-accent-light text-accent-dark"
-                      : "text-text hover:bg-bg-subtle"
-                  }`}
-                >
-                  <div className="min-w-0">
-                    <p className="truncate text-sm font-medium">{entity.name}</p>
-                    <p className="truncate text-2xs capitalize text-text-secondary">
-                      {entity.type}
-                    </p>
-                  </div>
-                  {active ? <i className="ri-check-line text-sm" /> : null}
-                </button>
-              );
-            })}
-          </div>
+          <button
+            type="button"
+            onClick={() => setEntitiesOpen((current) => !current)}
+            className="flex w-full items-center justify-between rounded-lg px-3 py-2 text-left transition-colors hover:bg-bg-subtle"
+          >
+            <div>
+              <p className="text-2xs font-medium uppercase tracking-wide text-text-muted">
+                Switch Entity
+              </p>
+              <p className="mt-1 truncate text-sm font-medium text-text">
+                {entityOptions.find((entity) => entity.id === selectedEntityId)?.name ||
+                  "All entities"}
+              </p>
+            </div>
+            <i
+              className={`ri-arrow-down-s-line text-base text-text-secondary transition-transform ${
+                entitiesOpen ? "rotate-180" : ""
+              }`}
+            />
+          </button>
+          {entitiesOpen ? (
+            <div className="mt-1 space-y-0.5">
+              {entityOptions.map((entity) => {
+                const active = entity.id === selectedEntityId;
+                return (
+                  <button
+                    key={entity.id}
+                    type="button"
+                    onClick={() => {
+                      setSelectedEntityId(entity.id);
+                      setOpen(false);
+                    }}
+                    className={`flex w-full items-center justify-between rounded-lg px-3 py-2 text-left transition-colors ${
+                      active
+                        ? "bg-accent-light text-accent-dark"
+                        : "text-text hover:bg-bg-subtle"
+                    }`}
+                  >
+                    <div className="min-w-0">
+                      <p className="truncate text-sm font-medium">{entity.name}</p>
+                      <p className="truncate text-2xs capitalize text-text-secondary">
+                        {entity.type}
+                      </p>
+                    </div>
+                    {active ? <i className="ri-check-line text-sm" /> : null}
+                  </button>
+                );
+              })}
+            </div>
+          ) : null}
 
           <div className="my-2 border-t border-bg-subtle" />
 
