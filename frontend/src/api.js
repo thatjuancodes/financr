@@ -69,6 +69,35 @@ async function requestFile(path, options = {}) {
   };
 }
 
+async function requestMultipart(path, formData, options = {}) {
+  const token = getAuthToken();
+  const workspaceId = getActiveWorkspaceId();
+  const res = await fetch(`${API_BASE}${path}`, {
+    method: "POST",
+    headers: {
+      ...(token ? { Authorization: `Bearer ${token}` } : {}),
+      ...(workspaceId ? { "x-workspace-id": workspaceId } : {}),
+      ...(options.headers || {}),
+    },
+    body: formData,
+    ...options,
+  });
+
+  const contentType = res.headers.get("content-type") || "";
+  const body = contentType.includes("application/json")
+    ? await res.json().catch(() => null)
+    : await res.text().catch(() => "");
+
+  if (!res.ok) {
+    if (body && typeof body === "object" && typeof body.error === "string" && body.error.trim()) {
+      throw new Error(body.error);
+    }
+    throw new Error((typeof body === "string" && body) || "Request failed");
+  }
+
+  return body;
+}
+
 export const api = {
   signup: (payload) =>
     request("/auth/signup", { method: "POST", body: JSON.stringify(payload) }),
@@ -343,6 +372,41 @@ export const api = {
     const suffix = query.toString() ? `?${query.toString()}` : "";
     return request(`/transactions${suffix}`);
   },
+  getImports: () => request("/imports"),
+  getImportBatch: (batchId) =>
+    request(`/imports/${encodeURIComponent(String(batchId))}`),
+  deleteImportBatch: (batchId) =>
+    request(`/imports/${encodeURIComponent(String(batchId))}`, {
+      method: "DELETE",
+    }),
+  uploadImportFile: ({ file, sourceLabel, entityId, accountId }) => {
+    const form = new FormData();
+    form.append("file", file);
+    if (sourceLabel) {
+      form.append("sourceLabel", String(sourceLabel));
+    }
+    if (entityId) {
+      form.append("entityId", String(entityId));
+    }
+    if (accountId !== undefined && accountId !== null && accountId !== "") {
+      form.append("accountId", String(accountId));
+    }
+    return requestMultipart("/imports/upload", form);
+  },
+  updateImportCandidate: (candidateId, payload) =>
+    request(`/imports/candidates/${encodeURIComponent(String(candidateId))}`, {
+      method: "PATCH",
+      body: JSON.stringify(payload),
+    }),
+  approveImportBatch: (batchId, candidateIds) =>
+    request(`/imports/${encodeURIComponent(String(batchId))}/approve`, {
+      method: "POST",
+      body: JSON.stringify({ candidateIds }),
+    }),
+  rejectImportCandidate: (candidateId) =>
+    request(`/imports/candidates/${encodeURIComponent(String(candidateId))}/reject`, {
+      method: "POST",
+    }),
   getTransfers: (params = {}) => {
     const query = new URLSearchParams();
     if (params.entity_id) {

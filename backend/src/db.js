@@ -404,6 +404,72 @@ async function init() {
     CREATE INDEX IF NOT EXISTS idx_transfers_to_account_id ON transfers(to_account_id);
     CREATE INDEX IF NOT EXISTS idx_transfers_transfer_date ON transfers(transfer_date);
 
+    CREATE TABLE IF NOT EXISTS import_batches (
+      id TEXT PRIMARY KEY,
+      workspace_id TEXT NOT NULL,
+      created_by_user_id TEXT NOT NULL,
+      source_type TEXT NOT NULL,
+      source_label TEXT,
+      status TEXT NOT NULL,
+      parser_id TEXT,
+      raw_text TEXT,
+      error_message TEXT,
+      created_at TEXT NOT NULL,
+      updated_at TEXT NOT NULL,
+      processed_at TEXT
+    );
+
+    CREATE TABLE IF NOT EXISTS import_files (
+      id TEXT PRIMARY KEY,
+      workspace_id TEXT NOT NULL,
+      batch_id TEXT NOT NULL,
+      filename TEXT NOT NULL,
+      mime_type TEXT NOT NULL,
+      size_bytes INTEGER NOT NULL,
+      storage_path TEXT NOT NULL,
+      sha256_hash TEXT NOT NULL,
+      created_at TEXT NOT NULL
+    );
+
+    CREATE TABLE IF NOT EXISTS import_candidates (
+      id TEXT PRIMARY KEY,
+      workspace_id TEXT NOT NULL,
+      batch_id TEXT NOT NULL,
+      status TEXT NOT NULL,
+      candidate_type TEXT NOT NULL,
+      transaction_date TEXT,
+      posted_date TEXT,
+      description TEXT,
+      merchant TEXT,
+      amount_cents INTEGER,
+      currency_code TEXT,
+      suggested_entity_id TEXT,
+      suggested_account_id INTEGER,
+      suggested_to_account_id INTEGER,
+      suggested_category_id INTEGER,
+      confidence_score REAL,
+      duplicate_of_type TEXT,
+      duplicate_of_id TEXT,
+      raw_line TEXT,
+      raw_json TEXT,
+      created_at TEXT NOT NULL,
+      approved_at TEXT,
+      approved_by_user_id TEXT
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_import_batches_workspace_id
+      ON import_batches(workspace_id);
+    CREATE INDEX IF NOT EXISTS idx_import_files_batch_id
+      ON import_files(batch_id);
+    CREATE INDEX IF NOT EXISTS idx_import_files_sha256_hash
+      ON import_files(sha256_hash);
+    CREATE INDEX IF NOT EXISTS idx_import_candidates_workspace_id
+      ON import_candidates(workspace_id);
+    CREATE INDEX IF NOT EXISTS idx_import_candidates_batch_id
+      ON import_candidates(batch_id);
+    CREATE INDEX IF NOT EXISTS idx_import_candidates_status
+      ON import_candidates(status);
+
     CREATE TABLE IF NOT EXISTS recurring_items (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
       type TEXT NOT NULL,

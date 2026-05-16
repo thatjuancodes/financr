@@ -168,12 +168,66 @@ erDiagram
         text created_at
     }
 
+    IMPORT_BATCHES {
+        text id PK
+        text workspace_id FK
+        text created_by_user_id FK
+        text source_type
+        text source_label
+        text status
+        text parser_id
+        text raw_text
+        text error_message
+        text created_at
+        text updated_at
+        text processed_at
+    }
+
+    IMPORT_FILES {
+        text id PK
+        text workspace_id FK
+        text batch_id FK
+        text filename
+        text mime_type
+        integer size_bytes
+        text storage_path
+        text sha256_hash
+        text created_at
+    }
+
+    IMPORT_CANDIDATES {
+        text id PK
+        text workspace_id FK
+        text batch_id FK
+        text status
+        text candidate_type
+        text transaction_date
+        text posted_date
+        text description
+        text merchant
+        integer amount_cents
+        text currency_code
+        text suggested_entity_id FK
+        integer suggested_account_id FK
+        integer suggested_to_account_id FK
+        integer suggested_category_id
+        real confidence_score
+        text duplicate_of_type
+        text duplicate_of_id
+        text created_at
+        text approved_at
+        text approved_by_user_id FK
+    }
+
     USERS ||--o{ WORKSPACE_MEMBERS : joins
     WORKSPACES ||--o{ WORKSPACE_MEMBERS : has
     USERS ||--o{ WORKSPACE_INVITES : sends
     USERS ||--o{ AUTH_SESSIONS : owns
     WORKSPACES ||--o{ WORKSPACE_INVITES : contains
     WORKSPACES ||--o{ ENTITIES : owns
+    WORKSPACES ||--o{ IMPORT_BATCHES : owns
+    WORKSPACES ||--o{ IMPORT_FILES : scopes
+    WORKSPACES ||--o{ IMPORT_CANDIDATES : scopes
     ENTITIES ||--o{ ACCOUNTS : owns
     ENTITIES ||--o{ INCOME : scopes
     ENTITIES ||--o{ EXPENSES : scopes
@@ -188,6 +242,10 @@ erDiagram
     ACCOUNTS ||--o{ TRANSACTIONS : to_account
     ACCOUNTS ||--o{ INCOME : credits
     ACCOUNTS ||--o{ EXPENSES : debits
+    IMPORT_BATCHES ||--o{ IMPORT_FILES : contains
+    IMPORT_BATCHES ||--o{ IMPORT_CANDIDATES : contains
+    ENTITIES ||--o{ IMPORT_CANDIDATES : suggested_entity
+    ACCOUNTS ||--o{ IMPORT_CANDIDATES : suggested_account
     ACCOUNTS ||--o{ RECURRING_ITEMS : posts
     WORKSPACES ||--o{ MONTHLY_REPORTS : stores
 ```
@@ -198,3 +256,5 @@ erDiagram
 - Modern transfers and transactions remain safely scoped through account ownership.
 - `monthly_reports` now stores `workspace_id` because all-entities monthly reports cannot be derived safely from `entity_id` alone.
 - `projection_scenarios` already use `workspace_id`.
+- `import_batches`, `import_files`, and `import_candidates` are workspace-scoped staging tables for Transaction Inbox.
+- Approval from `import_candidates` creates canonical rows in `expenses`, `income`, or `transfers`; the staging tables are never the source of truth.

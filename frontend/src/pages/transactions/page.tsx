@@ -1,4 +1,5 @@
 import { type ReactNode, useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useNavigate } from "react-router-dom";
 import { api } from "@/api";
 import Badge from "@/components/base/Badge";
 import Card from "@/components/base/Card";
@@ -136,6 +137,7 @@ type AccountOptionRecord = {
 };
 
 export default function Transactions() {
+  const navigate = useNavigate();
   const {
     accounts,
     balance,
@@ -1441,14 +1443,24 @@ export default function Transactions() {
       <main className="px-4 pb-12 pt-20 md:px-8">
         <div className="mb-6 flex items-center justify-between gap-3">
           <h1 className="text-2xl font-semibold text-text">Transactions</h1>
-          <button
-            type="button"
-            onClick={openAddDrawer}
-            className="inline-flex items-center gap-2 rounded-lg bg-accent px-4 py-2.5 text-sm font-medium text-white transition hover:bg-accent-dark"
-          >
-            <i className="ri-add-line text-base" />
-            <span>{activeType === "all" ? "Add Transaction" : `Add ${activeType}`}</span>
-          </button>
+          <div className="flex flex-wrap items-center gap-2">
+            <button
+              type="button"
+              onClick={() => navigate("/imports")}
+              className="inline-flex items-center gap-2 rounded-lg border border-slate-200 bg-white px-4 py-2.5 text-sm font-medium text-text transition hover:border-accent/30 hover:text-accent-dark"
+            >
+              <i className="ri-inbox-archive-line text-base" />
+              <span>Bulk Update</span>
+            </button>
+            <button
+              type="button"
+              onClick={openAddDrawer}
+              className="inline-flex items-center gap-2 rounded-lg bg-accent px-4 py-2.5 text-sm font-medium text-white transition hover:bg-accent-dark"
+            >
+              <i className="ri-add-line text-base" />
+              <span>{activeType === "all" ? "Add Transaction" : `Add ${activeType}`}</span>
+            </button>
+          </div>
         </div>
 
 	        {activeType === "debt" ? null : (

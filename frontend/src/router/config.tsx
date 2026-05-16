@@ -3,6 +3,8 @@ import { Navigate } from "react-router-dom";
 import NotFound from "../pages/NotFound";
 import Home from "../pages/home/page";
 import Transactions from "../pages/transactions/page";
+import ImportsPage from "../pages/imports/page";
+import ImportBatchDetailPage from "../pages/imports/detail-page";
 import Recurring from "../pages/recurring/page";
 import Reporting from "../pages/reporting/page";
 import Settings from "../pages/settings/page";
@@ -52,6 +54,14 @@ const routes: RouteObject[] = [
       {
         path: "/transactions",
         element: <Transactions />,
+      },
+      {
+        path: "/imports",
+        element: <ImportsPage />,
+      },
+      {
+        path: "/imports/:batchId",
+        element: <ImportBatchDetailPage />,
       },
       {
         path: "/recurring",

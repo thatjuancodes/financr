@@ -48,6 +48,12 @@ Supporting backend modules:
 - `backend/src/db.js`
 - `backend/src/auth.js`
 - `backend/src/authRoutes.js`
+- `backend/src/importRoutes.js`
+- `backend/src/imports/extractText.js`
+- `backend/src/imports/preprocessImage.js`
+- `backend/src/imports/parsers/genericTableParser.js`
+- `backend/src/imports/duplicateDetection.js`
+- `backend/src/imports/approveCandidate.js`
 - `backend/src/workspaces.js`
 - `backend/src/workspaceRoutes.js`
 - existing finance route modules such as `incomeRoutes.js`, `debtRoutes.js`, `budgetRoutes.js`, `settingsBalanceRoutes.js`, `reportRoutes.js`, `institutionRoutes.js`, and `ledger.js`
@@ -70,6 +76,17 @@ The backend remains an Express JSON API over SQLite.
 - `accounts.entity_id` remains unchanged.
 - Most finance tables continue to scope through `entity_id`.
 - Transfers and modern transactions continue to scope through account ownership.
+
+### Transaction Inbox Layer
+
+- `import_batches` stores one uploaded file processing lifecycle per batch.
+- `import_files` stores local file metadata and SHA-256 hashes.
+- `import_candidates` stores deterministic parse output for human review.
+- Import candidates are never canonical finance records.
+- Approval writes into the existing source-of-truth tables:
+  - `expenses`
+  - `income`
+  - `transfers`
 
 ## Auth Flow
 
@@ -104,6 +121,8 @@ New routed pages:
 - `/onboarding`
 - `/household`
 - `/invite/:token`
+- `/imports`
+- `/imports/:batchId`
 
 Protected routing rules:
 
@@ -144,6 +163,44 @@ Query patterns:
 - transfer and transaction queries join both sides through account ownership
 - the unified `/transactions` feed scopes legacy income, expenses, debts, recurring activity, transfers, and modern transactions through workspace ownership
 - stored monthly reports are now keyed by `workspace_id + month_key + entity_id` so an all-entities report cannot leak across spaces
+- import routes always scope `import_batches`, `import_files`, and `import_candidates` by `workspace_id` before returning metadata, candidates, or approval results
+
+## Transaction Inbox Flow
+
+The Transaction Inbox is the deterministic bulk-ingestion path that sits inside
+the existing Transactions mental model.
+
+1. The user clicks `Bulk Update` from `/transactions` or opens `/imports`.
+2. The frontend uploads one PDF or image per request to `POST /imports/upload`.
+3. The backend creates `import_batches` and `import_files` rows under the active workspace.
+4. Text extraction runs immediately:
+   - PDF: embedded text extraction first
+   - Image: `sharp` preprocessing followed by `tesseract.js` OCR
+5. The generic table parser scans extracted text for likely transaction rows using date, description, and amount heuristics.
+6. Parsed rows become `import_candidates`.
+7. Duplicate detection compares candidates with existing `expenses`, `income`, `transfers`, and `transactions`.
+8. The user reviews, edits, approves, or rejects candidates in `/imports/:batchId`.
+9. Approval writes canonical rows into `expenses`, `income`, or `transfers`.
+10. `FinanceDataContext.refresh()` runs after approval so `/transactions`, dashboard data, and other finance surfaces update immediately.
+
+Important boundaries:
+
+- No AI parsing is used in this phase.
+- No auto-approval exists.
+- `transactions` is not made canonical by this feature.
+- Local uploads stay server-side for now; storage migration can happen later.
+
+## Deterministic Parser Boundary
+
+The active parser is intentionally conservative:
+
+- It detects transaction-like rows from generic tables using known date and money formats.
+- It infers expense vs income from sign, debit/credit columns, and simple keyword heuristics.
+- It can infer likely transfers when transfer keywords and another known account appear in the same row.
+- It marks ambiguous rows as `needs_review` instead of guessing.
+
+This keeps the system deterministic today while leaving a clean place to add an
+AI-assisted parser later behind the same review and approval model.
 
 ## Legacy Data Backfill
 
@@ -164,6 +221,9 @@ Workspace-owned through entity or account:
 - `accounts`
 - `income`
 - `expenses`
+- `import_batches`
+- `import_files`
+- `import_candidates`
 - `debts`
 - `recurring_items`
 - `budgets`

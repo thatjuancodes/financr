@@ -205,6 +205,78 @@ export interface ProjectionResultSummary {
   adjusted_monthly_net_cashflow?: number;
 }
 
+export interface ImportBatchCandidateSummary {
+  total_count: number;
+  pending_count: number;
+  needs_review_count: number;
+  duplicate_count: number;
+  approved_count: number;
+  rejected_count: number;
+}
+
+export interface ImportDuplicateReference {
+  source_type: string;
+  source_id: string;
+  transaction_date: string;
+  amount_cents: number;
+  description?: string | null;
+}
+
+export interface ImportCandidateRecord {
+  id: string;
+  workspace_id: string;
+  batch_id: string;
+  status: "pending" | "approved" | "rejected" | "duplicate" | "needs_review";
+  candidate_type: "income" | "expense" | "transfer" | "unknown";
+  transaction_date?: string | null;
+  posted_date?: string | null;
+  description?: string | null;
+  merchant?: string | null;
+  amount_cents?: number | null;
+  currency_code?: string | null;
+  suggested_entity_id?: string | null;
+  suggested_account_id?: number | null;
+  suggested_to_account_id?: number | null;
+  suggested_category_id?: number | null;
+  confidence_score?: number | null;
+  duplicate_of_type?: string | null;
+  duplicate_of_id?: string | null;
+  raw_line?: string | null;
+  raw_json?: Record<string, unknown> | null;
+  created_at: string;
+  approved_at?: string | null;
+  approved_by_user_id?: string | null;
+  duplicate_reference?: ImportDuplicateReference | null;
+}
+
+export interface ImportFileRecord {
+  id: string;
+  workspace_id: string;
+  batch_id: string;
+  filename: string;
+  mime_type: string;
+  size_bytes: number;
+  storage_path: string;
+  sha256_hash: string;
+  created_at: string;
+}
+
+export interface ImportBatchRecord {
+  id: string;
+  workspace_id: string;
+  created_by_user_id: string;
+  source_type: "pdf" | "image";
+  source_label?: string | null;
+  status: "uploaded" | "extracting" | "parsed" | "failed" | "reviewed";
+  parser_id?: string | null;
+  error_message?: string | null;
+  created_at: string;
+  updated_at: string;
+  processed_at?: string | null;
+  file_count?: number;
+  summary?: ImportBatchCandidateSummary | null;
+}
+
 export interface ProjectionScenarioRecord {
   id: string;
   workspace_id: string;

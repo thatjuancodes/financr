@@ -61,6 +61,7 @@ const {
 const {
   registerDebtRoutes,
 } = require("./debtRoutes");
+const { registerImportRoutes } = require("./importRoutes");
 const {
   registerBudgetRoutes,
 } = require("./budgetRoutes");
@@ -2397,6 +2398,16 @@ registerIncomeRoutes(app, {
   isCsvRowEmpty,
   assertEntityInWorkspace,
   assertAccountInWorkspace,
+});
+
+registerImportRoutes(app, {
+  all,
+  get,
+  run,
+  assertEntityInWorkspace,
+  assertAccountInWorkspace,
+  getTransferById,
+  serializeTransferRow,
 });
 
 registerInstitutionRoutes(app, {
