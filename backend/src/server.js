@@ -3,6 +3,22 @@ const cors = require("cors");
 const crypto = require("crypto");
 const { init, run, get, all } = require("./db");
 const {
+  verifyPassword,
+  readBearerToken,
+  resolveSessionUser,
+  nowIso,
+} = require("./auth");
+const { registerAuthRoutes } = require("./authRoutes");
+const { registerWorkspaceRoutes } = require("./workspaceRoutes");
+const {
+  assertWorkspaceMember,
+  assertWorkspaceOwner,
+  assertEntityInWorkspace,
+  assertAccountInWorkspace,
+  getWorkspaceEntityIds,
+  getWorkspaceAccountIds,
+} = require("./workspaces");
+const {
   normalizeCategoryColor,
   normalizeCategoryIcon,
   pickCategoryColor,
@@ -58,6 +74,62 @@ const PORT = process.env.PORT || 3001;
 
 app.use(cors());
 app.use(express.json({ limit: "2mb" }));
+app.use(async (req, res, next) => {
+  try {
+    if (isPublicRoute(req)) {
+      return next();
+    }
+
+    const token = readBearerToken(req);
+    if (!token) {
+      return res.status(401).json({ error: "Authentication required" });
+    }
+
+    const currentUser = await resolveSessionUser({ get, run }, token);
+    if (!currentUser) {
+      return res.status(401).json({ error: "Authentication required" });
+    }
+
+    req.currentUser = currentUser;
+    req.authToken = token;
+
+    if (!requiresActiveWorkspace(req)) {
+      return next();
+    }
+
+    const workspaceId = normalizeWorkspaceId(req.headers["x-workspace-id"]);
+    if (!workspaceId) {
+      return res.status(400).json({ error: "x-workspace-id header is required" });
+    }
+
+    try {
+      await assertWorkspaceMember({ get }, currentUser.id, workspaceId);
+    } catch (error) {
+      return res.status(error.status || 403).json({ error: error.message });
+    }
+
+    req.workspaceId = workspaceId;
+    return next();
+  } catch (error) {
+    return next(error);
+  }
+});
+
+registerAuthRoutes(app, {
+  get,
+  run,
+  all,
+  verifyPassword,
+});
+
+registerWorkspaceRoutes(app, {
+  get,
+  run,
+  all,
+  nowIso,
+  createUuid,
+});
+
 registerLedgerRoutes(app, {
   run,
   get,
@@ -68,6 +140,10 @@ registerLedgerRoutes(app, {
   parseCsvRows,
   pickCsvValue,
   isCsvRowEmpty,
+  assertEntityInWorkspace,
+  assertAccountInWorkspace,
+  getWorkspaceEntityIds,
+  getWorkspaceAccountIds,
 });
 
 const ISO_DATE = /^\d{4}-\d{2}-\d{2}$/;
@@ -172,6 +248,35 @@ function normalizeWorkspaceId(value, allowUndefined = false) {
   }
   const normalized = String(value ?? "").trim();
   return normalized || null;
+}
+
+function isPublicRoute(req) {
+  const method = String(req.method || "GET").toUpperCase();
+  const path = String(req.path || "");
+  if (path === "/health") {
+    return true;
+  }
+  if (path === "/auth/signup" || path === "/auth/login") {
+    return true;
+  }
+  if (method === "GET" && /^\/invites\/[^/]+$/.test(path)) {
+    return true;
+  }
+  return false;
+}
+
+function requiresActiveWorkspace(req) {
+  const path = String(req.path || "");
+  if (path === "/auth/logout" || path === "/auth/me") {
+    return false;
+  }
+  if (path === "/workspaces" || /^\/workspaces\/[^/]+(?:\/members|\/invites)?$/.test(path)) {
+    return false;
+  }
+  if (/^\/invites\/[^/]+\/accept$/.test(path)) {
+    return false;
+  }
+  return true;
 }
 
 function normalizeCurrencyCode(value, allowUndefined = false) {
@@ -515,20 +620,32 @@ function hasEntityFilter(query) {
   );
 }
 
-async function getEntityById(entityId) {
+async function getEntityById(entityId, workspaceId = null) {
   if (!entityId) {
     return null;
   }
-  return get("SELECT id, name, type FROM entities WHERE id = ? LIMIT 1", [
-    entityId,
-  ]);
+  const params = [entityId];
+  const workspaceClause = workspaceId ? "AND workspace_id = ?" : "";
+  if (workspaceId) {
+    params.push(workspaceId);
+  }
+  return get(
+    `SELECT id, name, type, workspace_id FROM entities WHERE id = ? ${workspaceClause} LIMIT 1`,
+    params
+  );
 }
 
-async function getDefaultEntityId() {
+async function getDefaultEntityId(workspaceId = null) {
+  const params = [];
+  const workspaceClause = workspaceId ? "WHERE workspace_id = ?" : "";
+  if (workspaceId) {
+    params.push(workspaceId);
+  }
   const row = await get(
     `
     SELECT id
     FROM entities
+    ${workspaceClause}
     ORDER BY
       CASE type
         WHEN 'personal' THEN 1
@@ -539,19 +656,20 @@ async function getDefaultEntityId() {
       created_at ASC,
       id ASC
     LIMIT 1
-    `
+    `,
+    params
   );
   const normalized = normalizeEntityId(row?.id);
   return normalized;
 }
 
-async function resolveWriteEntityId(rawEntityId) {
+async function resolveWriteEntityId(rawEntityId, workspaceId = null) {
   const normalized = normalizeEntityId(rawEntityId);
   if (normalized) {
-    const entity = await getEntityById(normalized);
+    const entity = await getEntityById(normalized, workspaceId);
     return entity ? entity.id : null;
   }
-  return getDefaultEntityId();
+  return getDefaultEntityId(workspaceId);
 }
 
 async function resolvePostingAccountId({
@@ -596,8 +714,8 @@ async function resolvePostingAccountId({
   return { accountId: fallbackAccountId };
 }
 
-async function getAccountsTotalBalance(entityId = null) {
-  return getAccountsTotalBalanceWithLegacy(all, get, entityId);
+async function getAccountsTotalBalance(entityId = null, workspaceId = null) {
+  return getAccountsTotalBalanceWithLegacy(all, get, entityId, workspaceId);
 }
 
 function isValidMonthKey(value) {
@@ -1442,23 +1560,36 @@ function normalizeRecurringPayload(body) {
   };
 }
 
-async function getRecurringItemById(id) {
-  return get(`${RECURRING_SELECT} WHERE r.id = ?`, [id]);
+async function getRecurringItemById(id, workspaceId = null) {
+  const params = [id];
+  const workspaceClause = workspaceId ? "AND ent.workspace_id = ?" : "";
+  if (workspaceId) {
+    params.push(workspaceId);
+  }
+  return get(`${RECURRING_SELECT} WHERE r.id = ? ${workspaceClause}`, params);
 }
 
-function buildRecurringEntityFilter(entityId) {
-  if (!entityId) {
-    return { clause: "", params: [] };
+function buildRecurringEntityFilter(entityId, workspaceId = null) {
+  const conditions = [];
+  const params = [];
+  if (workspaceId) {
+    conditions.push("ent.workspace_id = ?");
+    params.push(workspaceId);
   }
+  if (!entityId) {
+    return { clause: conditions.join(" AND "), params };
+  }
+  conditions.push(`
+    (
+      (r.type = 'transfer' AND (from_account.entity_id = ? OR to_account.entity_id = ?))
+      OR
+      (r.type <> 'transfer' AND r.entity_id = ?)
+    )
+  `);
+  params.push(entityId, entityId, entityId);
   return {
-    clause: `
-      (
-        (r.type = 'transfer' AND (from_account.entity_id = ? OR to_account.entity_id = ?))
-        OR
-        (r.type <> 'transfer' AND r.entity_id = ?)
-      )
-    `,
-    params: [entityId, entityId, entityId],
+    clause: conditions.join(" AND "),
+    params,
   };
 }
 
@@ -1480,9 +1611,14 @@ async function recurringIncomeCategoryExists(incomeCategoryId) {
   return Boolean(row);
 }
 
-async function getRecurringTransferAccountById(accountId) {
+async function getRecurringTransferAccountById(accountId, workspaceId = null) {
   if (!Number.isInteger(accountId) || accountId <= 0) {
     return null;
+  }
+  const params = [accountId];
+  const workspaceClause = workspaceId ? "AND e.workspace_id = ?" : "";
+  if (workspaceId) {
+    params.push(workspaceId);
   }
   return get(
     `
@@ -1496,13 +1632,14 @@ async function getRecurringTransferAccountById(accountId) {
     FROM accounts a
     LEFT JOIN entities e ON e.id = a.entity_id
     WHERE a.id = ?
+      ${workspaceClause}
     LIMIT 1
     `,
-    [accountId]
+    params
   );
 }
 
-async function validateRecurringTransferPayload(payload) {
+async function validateRecurringTransferPayload(payload, workspaceId = null) {
   if (payload.type !== "transfer") {
     return {
       ok: true,
@@ -1515,8 +1652,8 @@ async function validateRecurringTransferPayload(payload) {
   }
 
   const [sourceAccount, destinationAccount] = await Promise.all([
-    getRecurringTransferAccountById(payload.from_account_id),
-    getRecurringTransferAccountById(payload.to_account_id),
+    getRecurringTransferAccountById(payload.from_account_id, workspaceId),
+    getRecurringTransferAccountById(payload.to_account_id, workspaceId),
   ]);
 
   if (!sourceAccount) {
@@ -1621,20 +1758,29 @@ function paginateItems(items, page, pageSize) {
   };
 }
 
-async function getMonthTransactions(monthKey, entityId = null) {
+async function getMonthTransactions(monthKey, entityId = null, workspaceId = null) {
   const range = getMonthDateRange(monthKey);
   if (!range) {
     throw new Error("Invalid month key");
   }
 
-  const incomeEntityClause = entityId ? "AND i.entity_id = ?" : "";
-  const expenseEntityClause = entityId ? "AND e.entity_id = ?" : "";
-  const incomeParams = entityId
-    ? [range.startDate, range.endDate, entityId]
-    : [range.startDate, range.endDate];
-  const expenseParams = entityId
-    ? [range.startDate, range.endDate, entityId]
-    : [range.startDate, range.endDate];
+  const incomeFilters = ["i.received_date >= ?", "i.received_date <= ?"];
+  const expenseFilters = ["e.spent_at >= ?", "e.spent_at <= ?"];
+  const incomeParams = [range.startDate, range.endDate];
+  const expenseParams = [range.startDate, range.endDate];
+
+  if (workspaceId) {
+    incomeFilters.push("income_entity.workspace_id = ?");
+    expenseFilters.push("expense_entity.workspace_id = ?");
+    incomeParams.push(workspaceId);
+    expenseParams.push(workspaceId);
+  }
+  if (entityId) {
+    incomeFilters.push("i.entity_id = ?");
+    expenseFilters.push("e.entity_id = ?");
+    incomeParams.push(entityId);
+    expenseParams.push(entityId);
+  }
 
   const [incomeRows, expenseRows] = await Promise.all([
     all(
@@ -1645,9 +1791,9 @@ async function getMonthTransactions(monthKey, entityId = null) {
         i.amount,
         COALESCE(ic.name, i.source, 'Uncategorized') AS category
       FROM income i
+      INNER JOIN entities income_entity ON income_entity.id = i.entity_id
       LEFT JOIN income_categories ic ON i.income_category_id = ic.id
-      WHERE i.received_date >= ? AND i.received_date <= ?
-      ${incomeEntityClause}
+      WHERE ${incomeFilters.join(" AND ")}
       `,
       incomeParams
     ),
@@ -1660,9 +1806,9 @@ async function getMonthTransactions(monthKey, entityId = null) {
         COALESCE(c.name, e.category, 'Uncategorized') AS category,
         e.expense_expectation
       FROM expenses e
+      INNER JOIN entities expense_entity ON expense_entity.id = e.entity_id
       LEFT JOIN categories c ON e.expense_category_id = c.id
-      WHERE e.spent_at >= ? AND e.spent_at <= ?
-      ${expenseEntityClause}
+      WHERE ${expenseFilters.join(" AND ")}
       `,
       expenseParams
     ),
@@ -1687,14 +1833,20 @@ async function getMonthTransactions(monthKey, entityId = null) {
   return [...incomeTransactions, ...expenseTransactions];
 }
 
-async function getMonthAccounts(monthKey, entityId = null) {
+async function getMonthAccounts(monthKey, entityId = null, workspaceId = null) {
   const range = getMonthDateRange(monthKey);
   if (!range) {
     throw new Error("Invalid month key");
   }
   const balanceDate = range.endDate;
   const params = Array(8).fill(balanceDate);
+  const whereClauses = [];
+  if (workspaceId) {
+    whereClauses.push("entity.workspace_id = ?");
+    params.push(workspaceId);
+  }
   if (entityId) {
+    whereClauses.push("a.entity_id = ?");
     params.push(entityId);
   }
 
@@ -1783,7 +1935,8 @@ async function getMonthAccounts(monthKey, entityId = null) {
         )
       ) AS balance_cents
     FROM accounts a
-    ${entityId ? "WHERE a.entity_id = ?" : ""}
+    INNER JOIN entities entity ON entity.id = a.entity_id
+    ${whereClauses.length ? `WHERE ${whereClauses.join(" AND ")}` : ""}
     ORDER BY a.created_at ASC, a.id ASC
     `,
     params
@@ -1805,13 +1958,23 @@ async function getMonthAccounts(monthKey, entityId = null) {
   return rows;
 }
 
-async function getMonthDebtSnapshot(monthKey, entityId = null) {
+async function getMonthDebtSnapshot(monthKey, entityId = null, workspaceId = null) {
   const range = getMonthDateRange(monthKey);
   if (!range) {
     throw new Error("Invalid month key");
   }
   const keyExpr =
     "COALESCE(NULLIF(TRIM(d.loan_origin), ''), NULLIF(TRIM(d.name), ''), 'Unassigned Debt')";
+  const params = [range.endDate, range.startDate, range.endDate];
+  const whereClauses = [];
+  if (workspaceId) {
+    whereClauses.push("entity.workspace_id = ?");
+    params.push(workspaceId);
+  }
+  if (entityId) {
+    whereClauses.push("d.entity_id = ?");
+    params.push(entityId);
+  }
   const rows = await all(
     `
     SELECT
@@ -1825,12 +1988,11 @@ async function getMonthDebtSnapshot(monthKey, entityId = null) {
         END
       ) AS monthly_payment
     FROM debts d
-    ${entityId ? "WHERE d.entity_id = ?" : ""}
+    INNER JOIN entities entity ON entity.id = d.entity_id
+    ${whereClauses.length ? `WHERE ${whereClauses.join(" AND ")}` : ""}
     GROUP BY ${keyExpr}
     `,
-    entityId
-      ? [range.endDate, range.startDate, range.endDate, entityId]
-      : [range.endDate, range.startDate, range.endDate]
+    params
   );
 
   return rows
@@ -1842,9 +2004,20 @@ async function getMonthDebtSnapshot(monthKey, entityId = null) {
     .filter((row) => row.balance !== 0 || row.monthlyPayment !== 0);
 }
 
-async function getMonthDebtTransactions(monthKey, entityId = null) {
+async function getMonthDebtTransactions(monthKey, entityId = null, workspaceId = null) {
   if (!isValidMonthKey(monthKey)) {
     throw new Error("Invalid month key");
+  }
+
+  const debtFilters = [];
+  const debtParams = [];
+  if (workspaceId) {
+    debtFilters.push("entity.workspace_id = ?");
+    debtParams.push(workspaceId);
+  }
+  if (entityId) {
+    debtFilters.push("d.entity_id = ?");
+    debtParams.push(entityId);
   }
 
   const [configRows, debtRows] = await Promise.all([
@@ -1866,12 +2039,13 @@ async function getMonthDebtTransactions(monthKey, entityId = null) {
         d.loan_origin,
         c.name AS category_name
       FROM debts d
+      INNER JOIN entities entity ON entity.id = d.entity_id
       LEFT JOIN categories c ON d.debt_category_id = c.id
-      ${entityId ? "WHERE d.entity_id = ?" : ""}
+      ${debtFilters.length ? `WHERE ${debtFilters.join(" AND ")}` : ""}
       ORDER BY d.spent_at DESC, d.id DESC
       `
       ,
-      entityId ? [entityId] : []
+      debtParams
     ),
   ]);
 
@@ -1904,7 +2078,11 @@ async function getMonthDebtTransactions(monthKey, entityId = null) {
     }));
 }
 
-async function buildMonthlyReportForMonth(monthKey, entityId = null) {
+async function buildMonthlyReportForMonth(
+  monthKey,
+  entityId = null,
+  workspaceId = null
+) {
   if (!isValidMonthKey(monthKey)) {
     throw new Error("Invalid month key");
   }
@@ -1924,16 +2102,22 @@ async function buildMonthlyReportForMonth(monthKey, entityId = null) {
     debtTransactions,
     recurringItems,
   ] = await Promise.all([
-    getMonthTransactions(monthKey, entityId),
-    previousMonthKey ? getMonthTransactions(previousMonthKey, entityId) : [],
-    prePreviousMonthKey ? getMonthTransactions(prePreviousMonthKey, entityId) : [],
-    getMonthAccounts(monthKey, entityId),
-    previousMonthKey ? getMonthAccounts(previousMonthKey, entityId) : [],
-    getMonthDebtSnapshot(monthKey, entityId),
-    getMonthDebtTransactions(monthKey, entityId),
+    getMonthTransactions(monthKey, entityId, workspaceId),
+    previousMonthKey
+      ? getMonthTransactions(previousMonthKey, entityId, workspaceId)
+      : [],
+    prePreviousMonthKey
+      ? getMonthTransactions(prePreviousMonthKey, entityId, workspaceId)
+      : [],
+    getMonthAccounts(monthKey, entityId, workspaceId),
+    previousMonthKey ? getMonthAccounts(previousMonthKey, entityId, workspaceId) : [],
+    getMonthDebtSnapshot(monthKey, entityId, workspaceId),
+    getMonthDebtTransactions(monthKey, entityId, workspaceId),
     all(
-      `${RECURRING_SELECT}${entityId ? " WHERE r.entity_id = ?" : ""}`,
-      entityId ? [entityId] : []
+      `${RECURRING_SELECT}
+       WHERE ent.workspace_id = ?
+       ${entityId ? "AND r.entity_id = ?" : ""}`,
+      entityId ? [workspaceId, entityId] : [workspaceId]
     ),
   ]);
 
@@ -1986,32 +2170,52 @@ function normalizeMonthlyReportEntityScope(entityId) {
   return normalized || "";
 }
 
-async function saveMonthlyReport(monthKey, report, entityId = null) {
+function normalizeMonthlyReportWorkspaceScope(workspaceId) {
+  const normalized = normalizeWorkspaceId(workspaceId);
+  return normalized || null;
+}
+
+async function saveMonthlyReport(monthKey, report, entityId = null, workspaceId = null) {
   const now = new Date().toISOString();
+  const workspaceScope = normalizeMonthlyReportWorkspaceScope(workspaceId);
+  if (!workspaceScope) {
+    throw new Error("Workspace id is required for monthly reports");
+  }
   const entityScope = normalizeMonthlyReportEntityScope(entityId);
   await run(
     `
-    INSERT INTO monthly_reports (month_key, entity_id, report_json, generated_at, updated_at)
-    VALUES (?, ?, ?, ?, ?)
-    ON CONFLICT(month_key, entity_id)
+    INSERT INTO monthly_reports (
+      workspace_id,
+      month_key,
+      entity_id,
+      report_json,
+      generated_at,
+      updated_at
+    )
+    VALUES (?, ?, ?, ?, ?, ?)
+    ON CONFLICT(workspace_id, month_key, entity_id)
     DO UPDATE SET
       report_json = excluded.report_json,
       updated_at = excluded.updated_at
     `,
-    [monthKey, entityScope, JSON.stringify(report), now, now]
+    [workspaceScope, monthKey, entityScope, JSON.stringify(report), now, now]
   );
-  return getMonthlyReportRecord(monthKey, entityId);
+  return getMonthlyReportRecord(monthKey, entityId, workspaceScope);
 }
 
-async function getMonthlyReportRecord(monthKey, entityId = null) {
+async function getMonthlyReportRecord(monthKey, entityId = null, workspaceId = null) {
+  const workspaceScope = normalizeMonthlyReportWorkspaceScope(workspaceId);
+  if (!workspaceScope) {
+    return null;
+  }
   const entityScope = normalizeMonthlyReportEntityScope(entityId);
   const row = await get(
     `
-    SELECT month_key, entity_id, report_json, generated_at, updated_at
+    SELECT workspace_id, month_key, entity_id, report_json, generated_at, updated_at
     FROM monthly_reports
-    WHERE month_key = ? AND entity_id = ?
+    WHERE workspace_id = ? AND month_key = ? AND entity_id = ?
     `,
-    [monthKey, entityScope]
+    [workspaceScope, monthKey, entityScope]
   );
   if (!row) {
     return null;
@@ -2029,6 +2233,7 @@ async function getMonthlyReportRecord(monthKey, entityId = null) {
   }
 
   return {
+    workspace_id: row.workspace_id,
     month_key: row.month_key,
     entity_id: row.entity_id || null,
     generated_at: row.generated_at,
@@ -2037,7 +2242,29 @@ async function getMonthlyReportRecord(monthKey, entityId = null) {
   };
 }
 
-async function ensureMonthlyReportsForClosedMonths(entityId = null) {
+async function ensureMonthlyReportsForClosedMonths(entityId = null, workspaceId = null) {
+  if (!workspaceId) {
+    const workspaceRows = await all(
+      `
+      SELECT DISTINCT workspace_id
+      FROM entities
+      WHERE workspace_id IS NOT NULL AND TRIM(workspace_id) <> ''
+      ORDER BY workspace_id ASC
+      `
+    );
+    const generated = [];
+    for (const row of workspaceRows) {
+      const result = await ensureMonthlyReportsForClosedMonths(
+        entityId,
+        String(row.workspace_id)
+      );
+      if (Array.isArray(result?.generated)) {
+        generated.push(...result.generated.map((monthKey) => `${row.workspace_id}:${monthKey}`));
+      }
+    }
+    return { generated };
+  }
+
   const lastClosedMonth = getLastClosedMonthKey();
   if (!lastClosedMonth) {
     return { generated: [] };
@@ -2046,27 +2273,38 @@ async function ensureMonthlyReportsForClosedMonths(entityId = null) {
   const hasEntityFilter = entityScope !== "";
 
   const [existingRows, candidateRows] = await Promise.all([
-    all("SELECT month_key FROM monthly_reports WHERE entity_id = ?", [entityScope]),
+    all(
+      "SELECT month_key FROM monthly_reports WHERE workspace_id = ? AND entity_id = ?",
+      [workspaceId, entityScope]
+    ),
     all(
       `
       SELECT DISTINCT substr(date_value, 1, 7) AS month_key
       FROM (
         SELECT received_date AS date_value
         FROM income
-        ${hasEntityFilter ? "WHERE entity_id = ?" : ""}
+        INNER JOIN entities income_entity ON income_entity.id = income.entity_id
+        WHERE income_entity.workspace_id = ?
+        ${hasEntityFilter ? "AND income.entity_id = ?" : ""}
         UNION ALL
         SELECT spent_at AS date_value
         FROM expenses
-        ${hasEntityFilter ? "WHERE entity_id = ?" : ""}
+        INNER JOIN entities expense_entity ON expense_entity.id = expenses.entity_id
+        WHERE expense_entity.workspace_id = ?
+        ${hasEntityFilter ? "AND expenses.entity_id = ?" : ""}
         UNION ALL
         SELECT spent_at AS date_value
         FROM debts
-        ${hasEntityFilter ? "WHERE entity_id = ?" : ""}
+        INNER JOIN entities debt_entity ON debt_entity.id = debts.entity_id
+        WHERE debt_entity.workspace_id = ?
+        ${hasEntityFilter ? "AND debts.entity_id = ?" : ""}
       )
       WHERE date_value IS NOT NULL AND date_value <> ''
       ORDER BY month_key ASC
       `,
-      hasEntityFilter ? [entityScope, entityScope, entityScope] : []
+      hasEntityFilter
+        ? [workspaceId, entityScope, workspaceId, entityScope, workspaceId, entityScope]
+        : [workspaceId, workspaceId, workspaceId]
     ),
   ]);
 
@@ -2094,8 +2332,8 @@ async function ensureMonthlyReportsForClosedMonths(entityId = null) {
     if (existingMonths.has(monthKey)) {
       continue;
     }
-    const report = await buildMonthlyReportForMonth(monthKey, entityId);
-    await saveMonthlyReport(monthKey, report, entityId);
+    const report = await buildMonthlyReportForMonth(monthKey, entityId, workspaceId);
+    await saveMonthlyReport(monthKey, report, entityId, workspaceId);
     generated.push(monthKey);
   }
 
@@ -2115,6 +2353,8 @@ registerSettingsBalanceRoutes(app, {
   todayISO,
   addDays,
   getUpcomingRecurringExpenseTotal,
+  assertEntityInWorkspace,
+  assertAccountInWorkspace,
 });
 
 registerDebtRoutes(app, {
@@ -2136,6 +2376,8 @@ registerDebtRoutes(app, {
   resolveEntityDefaultAccountId,
   normalizeCsvHeader,
   isCsvRowEmpty,
+  assertEntityInWorkspace,
+  assertAccountInWorkspace,
 });
 
 registerIncomeRoutes(app, {
@@ -2153,6 +2395,8 @@ registerIncomeRoutes(app, {
   resolveWriteEntityId,
   normalizeCsvHeader,
   isCsvRowEmpty,
+  assertEntityInWorkspace,
+  assertAccountInWorkspace,
 });
 
 registerInstitutionRoutes(app, {
@@ -2172,6 +2416,7 @@ registerInsuranceRoutes(app, {
   all,
   get,
   run,
+  assertEntityInWorkspace,
 });
 
 registerBudgetRoutes(app, {
@@ -2184,6 +2429,7 @@ registerBudgetRoutes(app, {
   resolveWriteEntityId,
   isValidDate,
   todayISO,
+  assertEntityInWorkspace,
 });
 
 app.get("/expenses", async (req, res) => {
@@ -2194,7 +2440,7 @@ app.get("/expenses", async (req, res) => {
   }
   try {
     if (entityId) {
-      const entity = await getEntityById(entityId);
+      const entity = await getEntityById(entityId, req.workspaceId);
       if (!entity) {
         return res.status(404).json({ error: "Entity not found" });
       }
@@ -2217,13 +2463,14 @@ app.get("/expenses", async (req, res) => {
         e.expense_expectation,
         c.name AS expense_category_name
       FROM expenses e
-      LEFT JOIN entities ent ON e.entity_id = ent.id
+      INNER JOIN entities ent ON e.entity_id = ent.id
       LEFT JOIN accounts a ON e.from_account_id = a.id
       LEFT JOIN categories c ON e.expense_category_id = c.id
-      ${entityId ? "WHERE e.entity_id = ?" : ""}
+      WHERE ent.workspace_id = ?
+      ${entityId ? "AND e.entity_id = ?" : ""}
       ORDER BY e.spent_at DESC, e.id DESC
       `,
-      entityId ? [entityId] : []
+      entityId ? [req.workspaceId, entityId] : [req.workspaceId]
     );
     res.json(rows);
   } catch (err) {
@@ -2269,7 +2516,17 @@ app.post("/expenses", async (req, res) => {
   }
 
   try {
-    const resolvedEntityId = await resolveWriteEntityId(entity_id);
+    if (entity_id !== undefined && entity_id !== null && entity_id !== "") {
+      await assertEntityInWorkspace({ get }, String(entity_id).trim(), req.workspaceId);
+    }
+    if (from_account_id !== undefined && from_account_id !== null && from_account_id !== "") {
+      await assertAccountInWorkspace(
+        { get },
+        Number(from_account_id),
+        req.workspaceId
+      );
+    }
+    const resolvedEntityId = await resolveWriteEntityId(entity_id, req.workspaceId);
     if (!resolvedEntityId) {
       return res.status(400).json({ error: "Invalid expense payload" });
     }
@@ -2330,7 +2587,9 @@ app.post("/expenses", async (req, res) => {
 
     res.status(201).json(row);
   } catch (err) {
-    res.status(500).json({ error: "Failed to add expense" });
+    res.status(err?.status || 500).json({
+      error: err?.message || "Failed to add expense",
+    });
   }
 });
 
@@ -2358,7 +2617,10 @@ app.post("/expenses/import-csv", async (req, res) => {
   }
 
   try {
-    const resolvedEntityId = await resolveWriteEntityId(requestedEntityId);
+    const resolvedEntityId = await resolveWriteEntityId(
+      requestedEntityId,
+      req.workspaceId
+    );
     if (!resolvedEntityId) {
       return res.status(400).json({ error: "Invalid expense import payload" });
     }
@@ -2592,12 +2854,12 @@ app.get("/recurring-items", async (req, res) => {
   }
   try {
     if (entityId) {
-      const entity = await getEntityById(entityId);
+      const entity = await getEntityById(entityId, req.workspaceId);
       if (!entity) {
         return res.status(404).json({ error: "Entity not found" });
       }
     }
-    const recurringFilter = buildRecurringEntityFilter(entityId);
+    const recurringFilter = buildRecurringEntityFilter(entityId, req.workspaceId);
     const rows = await all(
       `${RECURRING_SELECT}${recurringFilter.clause ? ` WHERE ${recurringFilter.clause}` : ""} ORDER BY r.next_due_date ASC, r.id ASC`,
       recurringFilter.params
@@ -2616,12 +2878,12 @@ app.get("/recurring-items/pending", async (req, res) => {
   }
   try {
     if (entityId) {
-      const entity = await getEntityById(entityId);
+      const entity = await getEntityById(entityId, req.workspaceId);
       if (!entity) {
         return res.status(404).json({ error: "Entity not found" });
       }
     }
-    const recurringFilter = buildRecurringEntityFilter(entityId);
+    const recurringFilter = buildRecurringEntityFilter(entityId, req.workspaceId);
     const rows = await all(
       `${RECURRING_SELECT} WHERE r.next_due_date <= ?${
         recurringFilter.clause ? ` AND ${recurringFilter.clause}` : ""
@@ -2647,14 +2909,17 @@ app.post("/recurring-items", async (req, res) => {
     if (!(await recurringIncomeCategoryExists(payload.income_category_id))) {
       return res.status(400).json({ error: "Invalid recurring item payload" });
     }
-    const transferValidation = await validateRecurringTransferPayload(payload);
+    const transferValidation = await validateRecurringTransferPayload(
+      payload,
+      req.workspaceId
+    );
     if (!transferValidation.ok) {
       return res.status(400).json({ error: transferValidation.error });
     }
     const resolvedEntityId =
       payload.type === "transfer"
         ? transferValidation.entityId
-        : await resolveWriteEntityId(payload.entity_id);
+        : await resolveWriteEntityId(payload.entity_id, req.workspaceId);
     if (!resolvedEntityId) {
       return res.status(400).json({ error: "Invalid recurring item payload" });
     }
@@ -2677,20 +2942,27 @@ app.put("/recurring-items/:id", async (req, res) => {
   }
 
   try {
+    const existingRecurringItem = await getRecurringItemById(id, req.workspaceId);
+    if (!existingRecurringItem) {
+      return res.status(404).json({ error: "Recurring item not found" });
+    }
     if (!(await recurringExpenseCategoryExists(payload.expense_category_id))) {
       return res.status(400).json({ error: "Invalid recurring item update" });
     }
     if (!(await recurringIncomeCategoryExists(payload.income_category_id))) {
       return res.status(400).json({ error: "Invalid recurring item update" });
     }
-    const transferValidation = await validateRecurringTransferPayload(payload);
+    const transferValidation = await validateRecurringTransferPayload(
+      payload,
+      req.workspaceId
+    );
     if (!transferValidation.ok) {
       return res.status(400).json({ error: transferValidation.error });
     }
     const resolvedEntityId =
       payload.type === "transfer"
         ? transferValidation.entityId
-        : await resolveWriteEntityId(payload.entity_id);
+        : await resolveWriteEntityId(payload.entity_id, req.workspaceId);
     if (!resolvedEntityId) {
       return res.status(400).json({ error: "Invalid recurring item update" });
     }
@@ -2739,7 +3011,7 @@ app.put("/recurring-items/:id", async (req, res) => {
       return res.status(404).json({ error: "Recurring item not found" });
     }
 
-    res.json(await getRecurringItemById(id));
+    res.json(await getRecurringItemById(id, req.workspaceId));
   } catch (err) {
     res.status(500).json({ error: "Failed to update recurring item" });
   }
@@ -2761,8 +3033,13 @@ app.post("/expenses/:id/mark-recurring", async (req, res) => {
 
   try {
     const expense = await get(
-      "SELECT id, amount, category AS name, notes, spent_at, expense_category_id, entity_id FROM expenses WHERE id = ?",
-      [id]
+      `
+      SELECT e.id, e.amount, e.category AS name, e.notes, e.spent_at, e.expense_category_id, e.entity_id
+      FROM expenses e
+      INNER JOIN entities ent ON ent.id = e.entity_id
+      WHERE e.id = ? AND ent.workspace_id = ?
+      `,
+      [id, req.workspaceId]
     );
     if (!expense) {
       return res.status(404).json({ error: "Expense not found" });
@@ -2824,8 +3101,13 @@ app.put("/expenses/:id", async (req, res) => {
 
   try {
     const existing = await get(
-      "SELECT id, entity_id, expense_expectation, from_account_id FROM expenses WHERE id = ?",
-      [id]
+      `
+      SELECT e.id, e.entity_id, e.expense_expectation, e.from_account_id
+      FROM expenses e
+      INNER JOIN entities ent ON ent.id = e.entity_id
+      WHERE e.id = ? AND ent.workspace_id = ?
+      `,
+      [id, req.workspaceId]
     );
     if (!existing) {
       return res.status(404).json({ error: "Expense not found" });
@@ -2916,6 +3198,18 @@ app.delete("/expenses/:id", async (req, res) => {
     return res.status(400).json({ error: "Invalid expense id" });
   }
   try {
+    const existing = await get(
+      `
+      SELECT e.id
+      FROM expenses e
+      INNER JOIN entities ent ON ent.id = e.entity_id
+      WHERE e.id = ? AND ent.workspace_id = ?
+      `,
+      [id, req.workspaceId]
+    );
+    if (!existing) {
+      return res.status(404).json({ error: "Expense not found" });
+    }
     const result = await run("DELETE FROM expenses WHERE id = ?", [id]);
     if (result.changes === 0) {
       return res.status(404).json({ error: "Expense not found" });
@@ -2932,6 +3226,10 @@ app.delete("/recurring-items/:id", async (req, res) => {
     return res.status(400).json({ error: "Invalid recurring item id" });
   }
   try {
+    const existing = await getRecurringItemById(id, req.workspaceId);
+    if (!existing) {
+      return res.status(404).json({ error: "Recurring item not found" });
+    }
     const result = await run("DELETE FROM recurring_items WHERE id = ?", [id]);
     if (result.changes === 0) {
       return res.status(404).json({ error: "Recurring item not found" });
@@ -2953,6 +3251,18 @@ app.put("/expenses/:id/category", async (req, res) => {
     return res.status(400).json({ error: "Invalid expense category update" });
   }
   try {
+    const existing = await get(
+      `
+      SELECT e.id
+      FROM expenses e
+      INNER JOIN entities ent ON ent.id = e.entity_id
+      WHERE e.id = ? AND ent.workspace_id = ?
+      `,
+      [id, req.workspaceId]
+    );
+    if (!existing) {
+      return res.status(404).json({ error: "Expense not found" });
+    }
     const result = await run(
       "UPDATE expenses SET expense_category_id = ? WHERE id = ?",
       [categoryId, id]
@@ -2992,6 +3302,18 @@ app.put("/expenses/:id/expectation", async (req, res) => {
     return res.status(400).json({ error: "Invalid expense expectation update" });
   }
   try {
+    const existing = await get(
+      `
+      SELECT e.id
+      FROM expenses e
+      INNER JOIN entities ent ON ent.id = e.entity_id
+      WHERE e.id = ? AND ent.workspace_id = ?
+      `,
+      [id, req.workspaceId]
+    );
+    if (!existing) {
+      return res.status(404).json({ error: "Expense not found" });
+    }
     const result = await run(
       "UPDATE expenses SET expense_expectation = ? WHERE id = ?",
       [expectation, id]
@@ -3030,7 +3352,7 @@ app.post("/recurring-items/:id/confirm", async (req, res) => {
   }
 
   try {
-    const recurringItem = await getRecurringItemById(id);
+    const recurringItem = await getRecurringItemById(id, req.workspaceId);
     if (!recurringItem) {
       return res.status(404).json({ error: "Recurring item not found" });
     }
@@ -3110,7 +3432,10 @@ app.post("/recurring-items/:id/confirm", async (req, res) => {
         [result.lastID]
       );
     } else {
-      const transferValidation = await validateRecurringTransferPayload(recurringItem);
+      const transferValidation = await validateRecurringTransferPayload(
+        recurringItem,
+        req.workspaceId
+      );
       if (!transferValidation.ok) {
         return res.status(400).json({ error: transferValidation.error });
       }
@@ -3126,6 +3451,7 @@ app.post("/recurring-items/:id/confirm", async (req, res) => {
         },
         get,
         all,
+        workspaceId: req.workspaceId,
       });
       if (resolvedTransfer.error) {
         return res.status(400).json({ error: resolvedTransfer.error });
@@ -3173,7 +3499,7 @@ app.post("/recurring-items/:id/confirm", async (req, res) => {
           nowIso,
         ]
       );
-      const transferRow = await getTransferById(get, transferId);
+      const transferRow = await getTransferById(get, transferId, req.workspaceId);
       createdRecord = serializeTransferRow(transferRow);
 
       if (transferValidation.mirrorAsIncomeExpense) {
@@ -3270,7 +3596,7 @@ app.post("/recurring-items/:id/confirm", async (req, res) => {
     );
 
     res.json({
-      recurring_item: await getRecurringItemById(id),
+      recurring_item: await getRecurringItemById(id, req.workspaceId),
       created_record: createdRecord,
       bookkeeping_records: bookkeepingRecords,
     });
@@ -3286,7 +3612,7 @@ app.post("/recurring-items/:id/skip", async (req, res) => {
   }
 
   try {
-    const recurringItem = await getRecurringItemById(id);
+    const recurringItem = await getRecurringItemById(id, req.workspaceId);
     if (!recurringItem) {
       return res.status(404).json({ error: "Recurring item not found" });
     }
@@ -3300,7 +3626,7 @@ app.post("/recurring-items/:id/skip", async (req, res) => {
       id,
     ]);
 
-    res.json(await getRecurringItemById(id));
+    res.json(await getRecurringItemById(id, req.workspaceId));
   } catch (err) {
     res.status(500).json({ error: "Failed to skip recurring item" });
   }
@@ -3326,6 +3652,7 @@ registerReportRoutes(app, {
   getLastClosedMonthKey,
   isValidMonthKey,
   buildCsv,
+  assertEntityInWorkspace,
 });
 
 registerReferenceDataRoutes(app, {
@@ -3356,6 +3683,7 @@ registerProjectionScenarioRoutes(app, {
   validateProjectionCashflowAssumptionsReferences,
   createUuid,
   buildProjectionResponsePayload,
+  assertEntityInWorkspace,
 });
 
 app.use((err, req, res, next) => {

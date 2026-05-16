@@ -8,43 +8,84 @@ import Reporting from "../pages/reporting/page";
 import Settings from "../pages/settings/page";
 import DesignSystem from "../pages/design/page";
 import Notifications from "../pages/notifications/page";
+import LoginPage from "../pages/login/page";
+import SignupPage from "../pages/signup/page";
+import OnboardingPage from "../pages/onboarding/page";
+import InvitePage from "../pages/invite/page";
+import HouseholdPage from "../pages/household/page";
+import { RequireAuth, RequireGuest, RequireOnboarding } from "./guards";
 
 const routes: RouteObject[] = [
   {
-    path: "/",
-    element: <Home />,
+    element: <RequireGuest />,
+    children: [
+      {
+        path: "/login",
+        element: <LoginPage />,
+      },
+      {
+        path: "/signup",
+        element: <SignupPage />,
+      },
+    ],
   },
   {
-    path: "/transactions",
-    element: <Transactions />,
+    path: "/invite/:token",
+    element: <InvitePage />,
   },
   {
-    path: "/recurring",
-    element: <Recurring />,
+    element: <RequireOnboarding />,
+    children: [
+      {
+        path: "/onboarding",
+        element: <OnboardingPage />,
+      },
+    ],
   },
   {
-    path: "/reporting",
-    element: <Reporting />,
-  },
-  {
-    path: "/notifications",
-    element: <Notifications />,
-  },
-  {
-    path: "/insights",
-    element: <Navigate to="/reporting?tab=insights" replace />,
-  },
-  {
-    path: "/automation",
-    element: <Navigate to="/settings?tab=automation" replace />,
-  },
-  {
-    path: "/settings",
-    element: <Settings />,
-  },
-  {
-    path: "/design",
-    element: <DesignSystem />,
+    element: <RequireAuth />,
+    children: [
+      {
+        path: "/",
+        element: <Home />,
+      },
+      {
+        path: "/transactions",
+        element: <Transactions />,
+      },
+      {
+        path: "/recurring",
+        element: <Recurring />,
+      },
+      {
+        path: "/reporting",
+        element: <Reporting />,
+      },
+      {
+        path: "/notifications",
+        element: <Notifications />,
+      },
+      {
+        path: "/insights",
+        element: <Navigate to="/reporting?tab=insights" replace />,
+      },
+      {
+        path: "/automation",
+        element: <Navigate to="/settings?tab=automation" replace />,
+      },
+      {
+        path: "/settings",
+        element: <Settings />,
+      },
+      {
+        path: "/household",
+        element: <HouseholdPage />,
+      },
+      {
+        path: "/design",
+        element: <DesignSystem />,
+      },
+    ],
   },
   {
     path: "*",

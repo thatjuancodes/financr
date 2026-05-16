@@ -228,8 +228,7 @@ export function summarizeCashflowSeries(
 }
 
 export function buildCashflowTrendTimeline(
-  incomeList: IncomeRecord[],
-  expenseList: ExpenseRecord[],
+  transactions: TransactionRecord[],
   debts: DebtRecord[],
   days = 30
 ) {
@@ -257,8 +256,11 @@ export function buildCashflowTrendTimeline(
     });
   }
 
-  incomeList.forEach((income) => {
-    const date = new Date(income.received_date);
+  transactions.forEach((transaction) => {
+    if (transaction.type === "transfer") {
+      return;
+    }
+    const date = new Date(transaction.created_at);
     if (Number.isNaN(date.getTime())) {
       return;
     }
@@ -271,24 +273,11 @@ export function buildCashflowTrendTimeline(
     if (!row) {
       return;
     }
-    row.income += Number(income.amount || 0);
-  });
-
-  expenseList.forEach((expense) => {
-    const date = new Date(expense.spent_at);
-    if (Number.isNaN(date.getTime())) {
+    if (transaction.type === "income") {
+      row.income += Number(transaction.amount || 0);
       return;
     }
-    date.setHours(0, 0, 0, 0);
-    if (date < start || date > today) {
-      return;
-    }
-    const dateKey = date.toISOString().slice(0, 10);
-    const row = buckets.get(dateKey);
-    if (!row) {
-      return;
-    }
-    row.expenses += Number(expense.amount || 0);
+    row.expenses += Number(transaction.amount || 0);
   });
 
   debts.forEach((debt) => {
@@ -316,8 +305,7 @@ export function buildCashflowTrendTimeline(
 }
 
 export function buildCashflowTrendSeries(
-  incomeList: IncomeRecord[],
-  expenseList: ExpenseRecord[],
+  transactions: TransactionRecord[],
   debts: DebtRecord[],
   months = 6
 ) {
@@ -342,22 +330,20 @@ export function buildCashflowTrendSeries(
     });
   }
 
-  incomeList.forEach((income) => {
-    const key = monthKey(income.received_date);
+  transactions.forEach((transaction) => {
+    if (transaction.type === "transfer") {
+      return;
+    }
+    const key = monthKey(transaction.created_at);
     const row = monthBuckets.get(key);
     if (!row) {
       return;
     }
-    row.income += Number(income.amount || 0);
-  });
-
-  expenseList.forEach((expense) => {
-    const key = monthKey(expense.spent_at);
-    const row = monthBuckets.get(key);
-    if (!row) {
+    if (transaction.type === "income") {
+      row.income += Number(transaction.amount || 0);
       return;
     }
-    row.expenses += Number(expense.amount || 0);
+    row.expenses += Number(transaction.amount || 0);
   });
 
   debts.forEach((debt) => {

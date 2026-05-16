@@ -1,0 +1,321 @@
+Project financr_v1 {
+  database_type: "SQLite"
+  note: "Active schema summary for the workspace-aware finance alpha."
+}
+
+Table users {
+  id text [pk]
+  email text [not null, unique]
+  name text
+  password_hash text
+  created_at text [not null]
+  updated_at text [not null]
+}
+
+Table workspaces {
+  id text [pk]
+  name text [not null]
+  type text [not null, default: 'household']
+  created_by_user_id text [not null]
+  created_at text [not null]
+  updated_at text [not null]
+}
+
+Table workspace_members {
+  workspace_id text [not null]
+  user_id text [not null]
+  role text [not null, default: 'member']
+  joined_at text [not null]
+
+  indexes {
+    (workspace_id, user_id) [pk]
+    user_id
+  }
+}
+
+Table workspace_invites {
+  id text [pk]
+  workspace_id text [not null]
+  email text [not null]
+  role text [not null, default: 'member']
+  token text [not null, unique]
+  status text [not null, default: 'pending']
+  invited_by_user_id text [not null]
+  accepted_by_user_id text
+  expires_at text [not null]
+  created_at text [not null]
+  accepted_at text
+
+  indexes {
+    email
+  }
+}
+
+Table auth_sessions {
+  id text [pk]
+  user_id text [not null]
+  token_hash text [not null, unique]
+  created_at text [not null]
+  expires_at text [not null]
+  revoked_at text
+  last_used_at text
+
+  indexes {
+    user_id
+    expires_at
+  }
+}
+
+Table entities {
+  id text [pk]
+  workspace_id text
+  name text [not null]
+  type text [not null]
+  created_at text [not null]
+  updated_at text [not null]
+
+  indexes {
+    workspace_id
+  }
+}
+
+Table institutions {
+  id text [pk]
+  name text [not null]
+  type text [not null]
+  code text
+  swift_code text
+  country text [not null, default: 'PH']
+  is_active integer [not null, default: 1]
+  created_at text [not null]
+  updated_at text [not null]
+  currency_code text [default: 'PHP']
+}
+
+Table accounts {
+  id integer [pk]
+  name text [not null]
+  type text [not null]
+  entity_id text [not null]
+  institution_id text
+  currency_code text [not null, default: 'PHP']
+  created_at text [not null]
+}
+
+Table income {
+  id integer [pk]
+  amount real [not null]
+  source text [not null]
+  received_date text [not null]
+  income_category_id integer
+  entity_id text
+  is_transfer_bookkeeping integer [not null, default: 0]
+  to_account_id integer
+}
+
+Table expenses {
+  id integer [pk]
+  amount real [not null]
+  category text [not null]
+  notes text
+  spent_at text [not null]
+  created_at text
+  expense_category_id integer
+  expense_expectation text [default: 'unexpected']
+  entity_id text
+  is_transfer_bookkeeping integer [not null, default: 0]
+  from_account_id integer
+}
+
+Table debts {
+  id integer [pk]
+  amount real [not null]
+  name text [not null]
+  loan_origin text
+  notes text
+  spent_at text [not null]
+  statement_month text
+  created_at text
+  debt_category_id integer
+  entity_id text
+}
+
+Table recurring_items {
+  id integer [pk]
+  type text [not null]
+  entity_id text
+  amount real [not null]
+  category text [not null]
+  expense_category_id integer
+  income_category_id integer
+  from_account_id integer
+  to_account_id integer
+  mirror_as_income_expense integer [not null, default: 0]
+  transfer_fee_amount real [not null, default: 0]
+  description text
+  frequency text [not null]
+  semi_monthly_day_1 integer
+  semi_monthly_day_2 integer
+  next_due_date text [not null]
+  last_confirmed_date text
+}
+
+Table budgets {
+  id integer [pk]
+  entity_id text [not null]
+  name text [not null]
+  category text
+  target_amount real [not null]
+  payment_plan text [not null, default: 'one_time']
+  payment_frequency text [not null, default: 'once']
+  payment_amount real [not null]
+  payment_count integer
+  start_date text [not null]
+  target_date text
+  notes text
+  is_active integer [not null, default: 1]
+  created_at text [not null]
+  updated_at text [not null]
+  budget_items_json text [default: '[]']
+}
+
+Table life_insurances {
+  id integer [pk]
+  entity_id text [not null]
+  provider text [not null]
+  policy_name text [not null]
+  insured_person text [not null]
+  coverage_amount real [not null, default: 0]
+  cash_surrender_value real [not null, default: 0]
+  premium_amount real [not null, default: 0]
+  payment_frequency text [not null, default: 'monthly']
+  renewal_date text
+  notes text
+  is_active integer [not null, default: 1]
+  created_at text [not null]
+  updated_at text [not null]
+}
+
+Table transfers {
+  id text [pk]
+  from_account_id integer [not null]
+  to_account_id integer [not null]
+  amount_cents integer [not null]
+  transfer_fee_cents integer [not null, default: 0]
+  fee_expense_id integer
+  mirror_as_income_expense integer [not null, default: 0]
+  expense_category_id integer
+  income_category_id integer
+  bookkeeping_expense_id integer
+  bookkeeping_income_id integer
+  transfer_date text [not null]
+  notes text
+  created_at text [not null]
+  updated_at text [not null]
+}
+
+Table transactions {
+  id integer [pk]
+  type text [not null]
+  amount_cents integer [not null]
+  from_account_id integer
+  to_account_id integer
+  category text
+  note text
+  created_at text [not null]
+}
+
+Table monthly_reports {
+  id integer [pk]
+  workspace_id text [not null]
+  month_key text [not null]
+  entity_id text [not null, default: '']
+  report_json text [not null]
+  generated_at text [not null]
+  updated_at text [not null]
+
+  indexes {
+    workspace_id
+    (workspace_id, month_key, entity_id) [unique]
+  }
+}
+
+Table projection_scenarios {
+  id text [pk]
+  workspace_id text [not null]
+  entity_id text [not null]
+  name text [not null]
+  type text [not null, default: 'SAVINGS']
+  currency text [not null, default: 'PHP']
+  initial_amount real [not null]
+  annual_interest_rate real [not null]
+  duration_months integer [not null]
+  monthly_contribution real [not null, default: 0]
+  compounding_frequency text [not null, default: 'monthly']
+  cashflow_assumptions_json text [not null, default: '{}']
+  notes text
+  created_at text [not null]
+  updated_at text [not null]
+
+  indexes {
+    workspace_id
+    entity_id
+  }
+}
+
+Table settings {
+  id integer [pk]
+  base_balance real [default: 0]
+  currency_code text [default: 'USD']
+  default_expense_account_id integer
+  default_income_account_id integer
+}
+
+Table categories {
+  id integer [pk]
+  name text [not null, unique]
+  color text
+  icon text
+}
+
+Table income_categories {
+  id integer [pk]
+  name text [not null, unique]
+  color text
+  icon text
+}
+
+Table loan_origin_configs {
+  loan_origin text [pk]
+  statement_day integer
+  due_day integer
+  updated_at text
+}
+
+Ref: workspaces.created_by_user_id > users.id
+Ref: workspace_members.workspace_id > workspaces.id
+Ref: workspace_members.user_id > users.id
+Ref: workspace_invites.workspace_id > workspaces.id
+Ref: workspace_invites.invited_by_user_id > users.id
+Ref: workspace_invites.accepted_by_user_id > users.id
+Ref: auth_sessions.user_id > users.id
+Ref: entities.workspace_id > workspaces.id
+Ref: accounts.entity_id > entities.id
+Ref: accounts.institution_id > institutions.id
+Ref: income.entity_id > entities.id
+Ref: income.to_account_id > accounts.id
+Ref: expenses.entity_id > entities.id
+Ref: expenses.from_account_id > accounts.id
+Ref: debts.entity_id > entities.id
+Ref: recurring_items.entity_id > entities.id
+Ref: recurring_items.from_account_id > accounts.id
+Ref: recurring_items.to_account_id > accounts.id
+Ref: budgets.entity_id > entities.id
+Ref: life_insurances.entity_id > entities.id
+Ref: transfers.from_account_id > accounts.id
+Ref: transfers.to_account_id > accounts.id
+Ref: transactions.from_account_id > accounts.id
+Ref: transactions.to_account_id > accounts.id
+Ref: monthly_reports.workspace_id > workspaces.id
+Ref: projection_scenarios.workspace_id > workspaces.id
+Ref: projection_scenarios.entity_id > entities.id

@@ -5,15 +5,21 @@ import { I18nextProvider } from "react-i18next";
 import i18n from "./i18n";
 import { FinanceDataProvider, useFinanceData } from "./contexts/FinanceDataContext";
 import { NoticeBanner } from "./components/feature/PageState";
+import { AuthProvider } from "./contexts/AuthContext";
+import { WorkspaceProvider } from "./contexts/WorkspaceContext";
 
 function App() {
   return (
     <I18nextProvider i18n={i18n}>
-      <FinanceDataProvider>
-        <BrowserRouter basename={__BASE_PATH__}>
-          <AppFrame />
-        </BrowserRouter>
-      </FinanceDataProvider>
+      <AuthProvider>
+        <WorkspaceProvider>
+          <FinanceDataProvider>
+            <BrowserRouter basename={__BASE_PATH__}>
+              <AppFrame />
+            </BrowserRouter>
+          </FinanceDataProvider>
+        </WorkspaceProvider>
+      </AuthProvider>
     </I18nextProvider>
   );
 }

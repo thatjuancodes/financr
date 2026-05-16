@@ -40,9 +40,7 @@ export default function Home() {
     categories,
     currentMonth,
     debtList,
-    expenseList,
     incomeCategories,
-    incomeList,
     recurringItems,
     scopedTransactions,
   } = useFinanceData();
@@ -323,8 +321,7 @@ export default function Home() {
             currency={currency}
             currentMonth={currentMonth}
             debtList={debtList}
-            expenseList={expenseList}
-            incomeList={incomeList}
+            transactions={scopedTransactions}
           />
         </section>
 
@@ -548,34 +545,32 @@ function HomeCashFlowSection({
   currency,
   currentMonth,
   debtList,
-  expenseList,
-  incomeList,
+  transactions,
 }: {
   animationsReady: boolean;
   animationStartAt: number | null;
   currency: string;
   currentMonth: string;
-  debtList: Parameters<typeof buildCashflowTrendTimeline>[2];
-  expenseList: Parameters<typeof buildCashflowTrendTimeline>[1];
-  incomeList: Parameters<typeof buildCashflowTrendTimeline>[0];
+  debtList: Parameters<typeof buildCashflowTrendTimeline>[1];
+  transactions: Parameters<typeof buildCashflowTrendTimeline>[0];
 }) {
   const [period, setPeriod] = useState<"week" | "month" | "quarter" | "halfyear" | "quarterlyMonth">("quarterlyMonth");
 
   const displayData = useMemo(() => {
     if (period === "week") {
-      return buildCashflowTrendTimeline(incomeList, expenseList, debtList, 7);
+      return buildCashflowTrendTimeline(transactions, debtList, 7);
     }
     if (period === "quarterlyMonth") {
-      return buildCashflowTrendSeries(incomeList, expenseList, debtList, 3);
+      return buildCashflowTrendSeries(transactions, debtList, 3);
     }
     if (period === "halfyear") {
-      return buildCashflowTrendSeries(incomeList, expenseList, debtList, 6);
+      return buildCashflowTrendSeries(transactions, debtList, 6);
     }
     if (period === "quarter") {
-      return buildCashflowTrendTimeline(incomeList, expenseList, debtList, 90);
+      return buildCashflowTrendTimeline(transactions, debtList, 90);
     }
-    return buildCashflowTrendTimeline(incomeList, expenseList, debtList, 30);
-  }, [debtList, expenseList, incomeList, period]);
+    return buildCashflowTrendTimeline(transactions, debtList, 30);
+  }, [debtList, period, transactions]);
 
   const summary = useMemo(
     () =>

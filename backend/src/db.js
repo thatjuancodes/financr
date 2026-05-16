@@ -4,6 +4,15 @@ const crypto = require("crypto");
 const initSqlJs = require("sql.js");
 const { resolveEntityDefaultAccountId } = require("./accountPreferences");
 const {
+  DEFAULT_LOCAL_USER_ID,
+  DEFAULT_LOCAL_WORKSPACE_ID,
+  DEFAULT_LOCAL_USER_EMAIL,
+  DEFAULT_LOCAL_USER_PASSWORD,
+  DEFAULT_LOCAL_USER_NAME,
+  DEFAULT_LOCAL_WORKSPACE_NAME,
+  hashPassword,
+} = require("./auth");
+const {
   CATEGORY_COLOR_SWATCHES,
   normalizeCategoryColor,
   normalizeCategoryIcon,
@@ -280,10 +289,61 @@ async function init() {
       default_income_account_id INTEGER
     );
 
+    CREATE TABLE IF NOT EXISTS users (
+      id TEXT PRIMARY KEY,
+      email TEXT NOT NULL UNIQUE,
+      name TEXT,
+      password_hash TEXT,
+      created_at TEXT NOT NULL,
+      updated_at TEXT NOT NULL
+    );
+
+    CREATE TABLE IF NOT EXISTS workspaces (
+      id TEXT PRIMARY KEY,
+      name TEXT NOT NULL,
+      type TEXT NOT NULL DEFAULT 'household',
+      created_by_user_id TEXT NOT NULL,
+      created_at TEXT NOT NULL,
+      updated_at TEXT NOT NULL
+    );
+
+    CREATE TABLE IF NOT EXISTS workspace_members (
+      workspace_id TEXT NOT NULL,
+      user_id TEXT NOT NULL,
+      role TEXT NOT NULL DEFAULT 'member',
+      joined_at TEXT NOT NULL,
+      PRIMARY KEY (workspace_id, user_id)
+    );
+
+    CREATE TABLE IF NOT EXISTS workspace_invites (
+      id TEXT PRIMARY KEY,
+      workspace_id TEXT NOT NULL,
+      email TEXT NOT NULL,
+      role TEXT NOT NULL DEFAULT 'member',
+      token TEXT NOT NULL UNIQUE,
+      status TEXT NOT NULL DEFAULT 'pending',
+      invited_by_user_id TEXT NOT NULL,
+      accepted_by_user_id TEXT,
+      expires_at TEXT NOT NULL,
+      created_at TEXT NOT NULL,
+      accepted_at TEXT
+    );
+
+    CREATE TABLE IF NOT EXISTS auth_sessions (
+      id TEXT PRIMARY KEY,
+      user_id TEXT NOT NULL,
+      token_hash TEXT NOT NULL UNIQUE,
+      created_at TEXT NOT NULL,
+      expires_at TEXT NOT NULL,
+      revoked_at TEXT,
+      last_used_at TEXT
+    );
+
     CREATE TABLE IF NOT EXISTS entities (
       id TEXT PRIMARY KEY,
       name TEXT NOT NULL,
       type TEXT NOT NULL CHECK (type IN ('personal', 'family', 'business')),
+      workspace_id TEXT,
       created_at TEXT NOT NULL,
       updated_at TEXT NOT NULL
     );
@@ -432,12 +492,13 @@ async function init() {
 
     CREATE TABLE IF NOT EXISTS monthly_reports (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
+      workspace_id TEXT NOT NULL,
       month_key TEXT NOT NULL,
       entity_id TEXT NOT NULL DEFAULT '',
       report_json TEXT NOT NULL,
       generated_at TEXT NOT NULL,
       updated_at TEXT NOT NULL,
-      UNIQUE (month_key, entity_id)
+      UNIQUE (workspace_id, month_key, entity_id)
     );
 
     CREATE TABLE IF NOT EXISTS projection_scenarios (
@@ -476,6 +537,24 @@ async function init() {
 
     CREATE INDEX IF NOT EXISTS idx_budgets_start_date
     ON budgets(start_date);
+
+    CREATE UNIQUE INDEX IF NOT EXISTS idx_users_email_unique
+    ON users(email);
+
+    CREATE INDEX IF NOT EXISTS idx_workspace_members_user_id
+    ON workspace_members(user_id);
+
+    CREATE UNIQUE INDEX IF NOT EXISTS idx_workspace_invites_token_unique
+    ON workspace_invites(token);
+
+    CREATE INDEX IF NOT EXISTS idx_workspace_invites_email
+    ON workspace_invites(email);
+
+    CREATE INDEX IF NOT EXISTS idx_auth_sessions_user_id
+    ON auth_sessions(user_id);
+
+    CREATE INDEX IF NOT EXISTS idx_auth_sessions_expires_at
+    ON auth_sessions(expires_at);
   `);
 
   const settingsColumns = all("PRAGMA table_info(settings)");
@@ -502,6 +581,10 @@ async function init() {
   const hasBudgetItemsJson = budgetColumns.some(
     (col) => col.name === "budget_items_json"
   );
+  const entityColumns = all("PRAGMA table_info(entities)");
+  const hasEntityWorkspaceId = entityColumns.some(
+    (col) => col.name === "workspace_id"
+  );
   db.run(`
     CREATE TABLE IF NOT EXISTS entity_account_preferences (
       entity_id TEXT PRIMARY KEY,
@@ -509,6 +592,10 @@ async function init() {
       default_income_account_id INTEGER
     )
   `);
+  if (!hasEntityWorkspaceId) {
+    db.run("ALTER TABLE entities ADD COLUMN workspace_id TEXT");
+  }
+  db.run("CREATE INDEX IF NOT EXISTS idx_entities_workspace_id ON entities(workspace_id)");
   if (!hasCurrency) {
     db.run("ALTER TABLE settings ADD COLUMN currency_code TEXT DEFAULT 'USD'");
   }
@@ -680,8 +767,8 @@ async function init() {
     DEFAULT_ENTITY_SEEDS.forEach((seed) => {
       db.run(
         `
-        INSERT INTO entities (id, name, type, created_at, updated_at)
-        VALUES (?, ?, ?, ?, ?)
+        INSERT INTO entities (id, name, type, workspace_id, created_at, updated_at)
+        VALUES (?, ?, ?, NULL, ?, ?)
         `,
         [seed.id, seed.name, seed.type, nowIso, nowIso]
       );
@@ -748,8 +835,8 @@ async function init() {
     } else {
       db.run(
         `
-        INSERT INTO entities (id, name, type, created_at, updated_at)
-        VALUES (?, ?, 'family', ?, ?)
+        INSERT INTO entities (id, name, type, workspace_id, created_at, updated_at)
+        VALUES (?, ?, 'family', NULL, ?, ?)
         `,
         [fallbackFamilyId, fallbackFamilyName, nowIso, nowIso]
       );
@@ -758,6 +845,302 @@ async function init() {
   }
   if (!familyEntityId) {
     familyEntityId = defaultEntityId;
+  }
+
+  const userCountRow = get("SELECT COUNT(*) AS count FROM users");
+  const hasWorkspaceBackfillCandidates = get(
+    "SELECT id FROM entities WHERE workspace_id IS NULL OR TRIM(workspace_id) = '' LIMIT 1"
+  );
+  let defaultLocalUserId = DEFAULT_LOCAL_USER_ID;
+  let defaultWorkspaceId = DEFAULT_LOCAL_WORKSPACE_ID;
+
+  if (hasWorkspaceBackfillCandidates) {
+    const existingDefaultUserByEmail = get(
+      `
+      SELECT id
+      FROM users
+      WHERE lower(email) = lower(?)
+      LIMIT 1
+      `,
+      [DEFAULT_LOCAL_USER_EMAIL]
+    );
+
+    if (existingDefaultUserByEmail?.id) {
+      defaultLocalUserId = String(existingDefaultUserByEmail.id);
+      db.run(
+        `
+        UPDATE users
+        SET name = ?, password_hash = ?, updated_at = ?
+        WHERE id = ?
+        `,
+        [
+          DEFAULT_LOCAL_USER_NAME,
+          hashPassword(DEFAULT_LOCAL_USER_PASSWORD),
+          nowIso,
+          defaultLocalUserId,
+        ]
+      );
+    } else if (Number(userCountRow?.count ?? 0) === 0) {
+      db.run(
+        `
+        INSERT INTO users (id, email, name, password_hash, created_at, updated_at)
+        VALUES (?, ?, ?, ?, ?, ?)
+        `,
+        [
+          DEFAULT_LOCAL_USER_ID,
+          DEFAULT_LOCAL_USER_EMAIL,
+          DEFAULT_LOCAL_USER_NAME,
+          hashPassword(DEFAULT_LOCAL_USER_PASSWORD),
+          nowIso,
+          nowIso,
+        ]
+      );
+      defaultLocalUserId = DEFAULT_LOCAL_USER_ID;
+    } else {
+      const existingUserWithDefaultId = get(
+        `
+        SELECT id
+        FROM users
+        WHERE id = ?
+        LIMIT 1
+        `,
+        [DEFAULT_LOCAL_USER_ID]
+      );
+      if (existingUserWithDefaultId?.id) {
+        db.run(
+          `
+          UPDATE users
+          SET email = ?, name = ?, password_hash = ?, updated_at = ?
+          WHERE id = ?
+          `,
+          [
+            DEFAULT_LOCAL_USER_EMAIL,
+            DEFAULT_LOCAL_USER_NAME,
+            hashPassword(DEFAULT_LOCAL_USER_PASSWORD),
+            nowIso,
+            DEFAULT_LOCAL_USER_ID,
+          ]
+        );
+        defaultLocalUserId = DEFAULT_LOCAL_USER_ID;
+      } else {
+        defaultLocalUserId = createUuid();
+        db.run(
+          `
+          INSERT INTO users (id, email, name, password_hash, created_at, updated_at)
+          VALUES (?, ?, ?, ?, ?, ?)
+          `,
+          [
+            defaultLocalUserId,
+            DEFAULT_LOCAL_USER_EMAIL,
+            DEFAULT_LOCAL_USER_NAME,
+            hashPassword(DEFAULT_LOCAL_USER_PASSWORD),
+            nowIso,
+            nowIso,
+          ]
+        );
+      }
+    }
+
+    const existingWorkspaceById = get(
+      `
+      SELECT id
+      FROM workspaces
+      WHERE id = ?
+      LIMIT 1
+      `,
+      [DEFAULT_LOCAL_WORKSPACE_ID]
+    );
+    if (existingWorkspaceById?.id) {
+      db.run(
+        `
+        UPDATE workspaces
+        SET name = ?, type = 'household', created_by_user_id = ?, updated_at = ?
+        WHERE id = ?
+        `,
+        [
+          DEFAULT_LOCAL_WORKSPACE_NAME,
+          defaultLocalUserId,
+          nowIso,
+          DEFAULT_LOCAL_WORKSPACE_ID,
+        ]
+      );
+      defaultWorkspaceId = DEFAULT_LOCAL_WORKSPACE_ID;
+    } else {
+      const existingWorkspaceByName = get(
+        `
+        SELECT id
+        FROM workspaces
+        WHERE lower(name) = lower(?)
+        ORDER BY created_at ASC, id ASC
+        LIMIT 1
+        `,
+        [DEFAULT_LOCAL_WORKSPACE_NAME]
+      );
+      if (existingWorkspaceByName?.id) {
+        defaultWorkspaceId = String(existingWorkspaceByName.id);
+      } else {
+        db.run(
+          `
+          INSERT INTO workspaces (
+            id,
+            name,
+            type,
+            created_by_user_id,
+            created_at,
+            updated_at
+          )
+          VALUES (?, ?, 'household', ?, ?, ?)
+          `,
+          [
+            DEFAULT_LOCAL_WORKSPACE_ID,
+            DEFAULT_LOCAL_WORKSPACE_NAME,
+            defaultLocalUserId,
+            nowIso,
+            nowIso,
+          ]
+        );
+        defaultWorkspaceId = DEFAULT_LOCAL_WORKSPACE_ID;
+      }
+    }
+
+    const ownerMembership = get(
+      `
+      SELECT workspace_id, user_id
+      FROM workspace_members
+      WHERE workspace_id = ? AND user_id = ?
+      LIMIT 1
+      `,
+      [defaultWorkspaceId, defaultLocalUserId]
+    );
+    if (!ownerMembership) {
+      db.run(
+        `
+        INSERT INTO workspace_members (workspace_id, user_id, role, joined_at)
+        VALUES (?, ?, 'owner', ?)
+        `,
+        [defaultWorkspaceId, defaultLocalUserId, nowIso]
+      );
+    }
+
+    db.run(
+      `
+      UPDATE entities
+      SET workspace_id = ?
+      WHERE workspace_id IS NULL OR TRIM(workspace_id) = ''
+      `,
+      [defaultWorkspaceId]
+    );
+  }
+
+  const seededWorkspace = get(
+    `
+    SELECT id
+    FROM workspaces
+    WHERE id = ?
+    LIMIT 1
+    `,
+    [DEFAULT_LOCAL_WORKSPACE_ID]
+  );
+  if (seededWorkspace?.id) {
+    let seededOwnerUserId = DEFAULT_LOCAL_USER_ID;
+    const seededUserByEmail = get(
+      `
+      SELECT id
+      FROM users
+      WHERE lower(email) = lower(?)
+      LIMIT 1
+      `,
+      [DEFAULT_LOCAL_USER_EMAIL]
+    );
+    if (seededUserByEmail?.id) {
+      seededOwnerUserId = String(seededUserByEmail.id);
+      db.run(
+        `
+        UPDATE users
+        SET name = ?, password_hash = ?, updated_at = ?
+        WHERE id = ?
+        `,
+        [
+          DEFAULT_LOCAL_USER_NAME,
+          hashPassword(DEFAULT_LOCAL_USER_PASSWORD),
+          nowIso,
+          seededOwnerUserId,
+        ]
+      );
+    } else {
+      const seededUserById = get(
+        `
+        SELECT id
+        FROM users
+        WHERE id = ?
+        LIMIT 1
+        `,
+        [DEFAULT_LOCAL_USER_ID]
+      );
+      if (seededUserById?.id) {
+        db.run(
+          `
+          UPDATE users
+          SET email = ?, name = ?, password_hash = ?, updated_at = ?
+          WHERE id = ?
+          `,
+          [
+            DEFAULT_LOCAL_USER_EMAIL,
+            DEFAULT_LOCAL_USER_NAME,
+            hashPassword(DEFAULT_LOCAL_USER_PASSWORD),
+            nowIso,
+            DEFAULT_LOCAL_USER_ID,
+          ]
+        );
+      } else {
+        db.run(
+          `
+          INSERT INTO users (id, email, name, password_hash, created_at, updated_at)
+          VALUES (?, ?, ?, ?, ?, ?)
+          `,
+          [
+            DEFAULT_LOCAL_USER_ID,
+            DEFAULT_LOCAL_USER_EMAIL,
+            DEFAULT_LOCAL_USER_NAME,
+            hashPassword(DEFAULT_LOCAL_USER_PASSWORD),
+            nowIso,
+            nowIso,
+          ]
+        );
+      }
+    }
+
+    db.run(
+      `
+      UPDATE workspaces
+      SET name = ?, type = 'household', created_by_user_id = ?, updated_at = ?
+      WHERE id = ?
+      `,
+      [
+        DEFAULT_LOCAL_WORKSPACE_NAME,
+        seededOwnerUserId,
+        nowIso,
+        DEFAULT_LOCAL_WORKSPACE_ID,
+      ]
+    );
+    const seededOwnerMembership = get(
+      `
+      SELECT workspace_id, user_id
+      FROM workspace_members
+      WHERE workspace_id = ? AND user_id = ?
+      LIMIT 1
+      `,
+      [DEFAULT_LOCAL_WORKSPACE_ID, seededOwnerUserId]
+    );
+    if (!seededOwnerMembership) {
+      db.run(
+        `
+        INSERT INTO workspace_members (workspace_id, user_id, role, joined_at)
+        VALUES (?, ?, 'owner', ?)
+        `,
+        [DEFAULT_LOCAL_WORKSPACE_ID, seededOwnerUserId, nowIso]
+      );
+    }
   }
 
   const transactionsTableSqlRow = get(
@@ -1707,6 +2090,9 @@ async function init() {
   }
 
   let monthlyReportColumns = all("PRAGMA table_info(monthly_reports)");
+  const hasMonthlyWorkspaceId = monthlyReportColumns.some(
+    (col) => col.name === "workspace_id"
+  );
   const hasMonthlyReportJson = monthlyReportColumns.some(
     (col) => col.name === "report_json"
   );
@@ -1736,32 +2122,62 @@ async function init() {
     }
     const cols = all(`PRAGMA index_info(${idx.name})`).map((col) => col.name);
     return (
-      cols.length === 2 &&
-      cols[0] === "month_key" &&
-      cols[1] === "entity_id"
+      cols.length === 3 &&
+      cols[0] === "workspace_id" &&
+      cols[1] === "month_key" &&
+      cols[2] === "entity_id"
     );
   });
 
-  if (!hasMonthlyEntityId || !hasScopedMonthlyUniqueIndex) {
+  if (!hasMonthlyWorkspaceId || !hasMonthlyEntityId || !hasScopedMonthlyUniqueIndex) {
     const migrationNow = new Date().toISOString();
     const sourceEntityExpr = hasMonthlyEntityId
       ? "COALESCE(NULLIF(TRIM(entity_id), ''), '')"
       : "''";
+    const sourceWorkspaceExpr = hasMonthlyWorkspaceId
+      ? `
+        COALESCE(
+          NULLIF(TRIM(workspace_id), ''),
+          (
+            CASE
+              WHEN ${sourceEntityExpr} <> ''
+                THEN (SELECT workspace_id FROM entities WHERE id = ${sourceEntityExpr} LIMIT 1)
+              ELSE NULL
+            END
+          ),
+          ?
+        )
+      `
+      : `
+        COALESCE(
+          (
+            CASE
+              WHEN ${sourceEntityExpr} <> ''
+                THEN (SELECT workspace_id FROM entities WHERE id = ${sourceEntityExpr} LIMIT 1)
+              ELSE NULL
+            END
+          ),
+          ?
+        )
+      `;
+    db.run("DROP TABLE IF EXISTS monthly_reports_next");
     db.run(`
-      CREATE TABLE IF NOT EXISTS monthly_reports_next (
+      CREATE TABLE monthly_reports_next (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
+        workspace_id TEXT NOT NULL,
         month_key TEXT NOT NULL,
         entity_id TEXT NOT NULL DEFAULT '',
         report_json TEXT NOT NULL,
         generated_at TEXT NOT NULL,
         updated_at TEXT NOT NULL,
-        UNIQUE (month_key, entity_id)
+        UNIQUE (workspace_id, month_key, entity_id)
       )
     `);
     db.run(
       `
       INSERT OR REPLACE INTO monthly_reports_next (
         id,
+        workspace_id,
         month_key,
         entity_id,
         report_json,
@@ -1770,6 +2186,7 @@ async function init() {
       )
       SELECT
         id,
+        ${sourceWorkspaceExpr},
         month_key,
         ${sourceEntityExpr},
         COALESCE(NULLIF(report_json, ''), '{}'),
@@ -1778,12 +2195,30 @@ async function init() {
       FROM monthly_reports
       WHERE month_key IS NOT NULL AND TRIM(month_key) <> ''
       `,
-      [migrationNow, migrationNow]
+      [DEFAULT_LOCAL_WORKSPACE_ID, migrationNow, migrationNow]
     );
     db.run("DROP TABLE monthly_reports");
     db.run("ALTER TABLE monthly_reports_next RENAME TO monthly_reports");
   }
 
+  db.run(
+    `
+    UPDATE monthly_reports
+    SET workspace_id = COALESCE(
+      NULLIF(TRIM(workspace_id), ''),
+      (
+        CASE
+          WHEN entity_id IS NOT NULL AND TRIM(entity_id) <> ''
+            THEN (SELECT workspace_id FROM entities WHERE id = monthly_reports.entity_id LIMIT 1)
+          ELSE NULL
+        END
+      ),
+      ?
+    )
+    WHERE workspace_id IS NULL OR TRIM(workspace_id) = ''
+    `,
+    [DEFAULT_LOCAL_WORKSPACE_ID]
+  );
   db.run(
     "UPDATE monthly_reports SET entity_id = '' WHERE entity_id IS NULL OR TRIM(entity_id) = ''"
   );
@@ -1797,6 +2232,9 @@ async function init() {
   );
   db.run(
     "UPDATE monthly_reports SET updated_at = generated_at WHERE updated_at IS NULL OR updated_at = ''"
+  );
+  db.run(
+    "CREATE INDEX IF NOT EXISTS idx_monthly_reports_workspace_id ON monthly_reports(workspace_id)"
   );
 
   const projectionScenarioColumns = all("PRAGMA table_info(projection_scenarios)");

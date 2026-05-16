@@ -215,7 +215,12 @@ function normalizeCreatedAt(value) {
   return parsed.toISOString();
 }
 
-async function getAccountById(get, id) {
+async function getAccountById(get, id, workspaceId = null) {
+  const params = [id];
+  const workspaceClause = workspaceId ? "AND e.workspace_id = ?" : "";
+  if (workspaceId) {
+    params.push(workspaceId);
+  }
   return get(
     `
     SELECT
@@ -235,8 +240,9 @@ async function getAccountById(get, id) {
     LEFT JOIN entities e ON e.id = a.entity_id
     LEFT JOIN institutions i ON i.id = a.institution_id
     WHERE a.id = ?
+      ${workspaceClause}
     `,
-    [id]
+    params
   );
 }
 
@@ -284,22 +290,34 @@ async function getDefaultCurrencyCode(get) {
   return normalizeCurrencyCode(row?.currency_code) || "PHP";
 }
 
-async function getEntityById(get, id) {
+async function getEntityById(get, id, workspaceId = null) {
+  const params = [id];
+  const workspaceClause = workspaceId ? "AND workspace_id = ?" : "";
+  if (workspaceId) {
+    params.push(workspaceId);
+  }
   return get(
     `
-    SELECT id, name, type, created_at, updated_at
+    SELECT id, name, type, workspace_id, created_at, updated_at
     FROM entities
     WHERE id = ?
+      ${workspaceClause}
     `,
-    [id]
+    params
   );
 }
 
-async function getDefaultEntityId(get) {
+async function getDefaultEntityId(get, workspaceId = null) {
+  const params = [];
+  const workspaceClause = workspaceId ? "WHERE workspace_id = ?" : "";
+  if (workspaceId) {
+    params.push(workspaceId);
+  }
   const row = await get(
     `
     SELECT id
     FROM entities
+    ${workspaceClause}
     ORDER BY
       CASE type
         WHEN 'personal' THEN 1
@@ -310,76 +328,114 @@ async function getDefaultEntityId(get) {
       created_at ASC,
       id ASC
     LIMIT 1
-    `
+    `,
+    params
   );
   return normalizeEntityId(row?.id);
 }
 
-async function getDefaultCashAccountId(get) {
+async function getDefaultCashAccountId(get, workspaceId = null) {
+  const params = [];
+  const workspaceJoin = workspaceId
+    ? "INNER JOIN entities e ON e.id = accounts.entity_id"
+    : "";
+  const workspaceWhere = workspaceId ? "AND e.workspace_id = ?" : "";
+  if (workspaceId) {
+    params.push(workspaceId);
+  }
   const row = await get(
     `
-    SELECT id
+    SELECT accounts.id
     FROM accounts
-    WHERE type = 'cash'
-    ORDER BY created_at ASC, id ASC
+    ${workspaceJoin}
+    WHERE accounts.type = 'cash'
+      ${workspaceWhere}
+    ORDER BY accounts.created_at ASC, accounts.id ASC
     LIMIT 1
-    `
+    `,
+    params
   );
   if (row?.id) {
     return row.id;
   }
+  const fallbackParams = workspaceId ? [workspaceId] : [];
   const fallback = await get(
     `
-    SELECT id
+    SELECT accounts.id
     FROM accounts
-    ORDER BY created_at ASC, id ASC
+    ${workspaceJoin}
+    ${workspaceId ? "WHERE e.workspace_id = ?" : ""}
+    ORDER BY accounts.created_at ASC, accounts.id ASC
     LIMIT 1
-    `
+    `,
+    fallbackParams
   );
   return fallback?.id ?? null;
 }
 
-async function getDefaultBankAccountId(get) {
+async function getDefaultBankAccountId(get, workspaceId = null) {
+  const params = [];
+  const workspaceJoin = workspaceId
+    ? "INNER JOIN entities e ON e.id = accounts.entity_id"
+    : "";
+  const workspaceWhere = workspaceId ? "AND e.workspace_id = ?" : "";
+  if (workspaceId) {
+    params.push(workspaceId);
+  }
   const row = await get(
     `
-    SELECT id
+    SELECT accounts.id
     FROM accounts
-    WHERE type = 'bank'
-    ORDER BY created_at ASC, id ASC
+    ${workspaceJoin}
+    WHERE accounts.type = 'bank'
+      ${workspaceWhere}
+    ORDER BY accounts.created_at ASC, accounts.id ASC
     LIMIT 1
-    `
+    `,
+    params
   );
   if (row?.id) {
     return row.id;
   }
-  return getDefaultCashAccountId(get);
+  return getDefaultCashAccountId(get, workspaceId);
 }
 
-async function getPreferredDefaultAccountId(get, columnName, fallbackResolver) {
+async function getPreferredDefaultAccountId(
+  get,
+  columnName,
+  fallbackResolver,
+  workspaceId = null
+) {
   const row = await get(`SELECT ${columnName} AS account_id FROM settings WHERE id = 1`);
   const preferredAccountId = parseOptionalAccountId(row?.account_id);
   if (preferredAccountId) {
-    const preferredAccount = await getAccountById(get, preferredAccountId);
+    const preferredAccount = await getAccountById(
+      get,
+      preferredAccountId,
+      workspaceId
+    );
     if (preferredAccount) {
       return preferredAccount.id;
     }
   }
-  return fallbackResolver(get);
+  return fallbackResolver(get, workspaceId);
 }
 
-async function getDefaultExpenseAccountId(get) {
+async function getDefaultExpenseAccountId(get, workspaceId = null) {
   return getPreferredDefaultAccountId(
     get,
     "default_expense_account_id",
-    getDefaultCashAccountId
+    getDefaultCashAccountId,
+    workspaceId
   );
 }
 
-async function getDefaultIncomeAccountId(get) {
+async function getDefaultIncomeAccountId(get, workspaceId = null) {
   return getPreferredDefaultAccountId(
     get,
     "default_income_account_id",
-    getDefaultBankAccountId
+    getDefaultBankAccountId,
+    workspaceId
   );
 }
 
@@ -683,13 +739,21 @@ async function getAccountWithBalance(get, all, id) {
   };
 }
 
-async function getTransactionById(get, id) {
+async function getTransactionById(get, id, workspaceId = null) {
+  const params = [];
+  const workspaceWhere = workspaceId
+    ? "WHERE t.id = ? AND (from_entity.workspace_id = ? OR to_entity.workspace_id = ?)"
+    : "WHERE t.id = ?";
+  params.push(id);
+  if (workspaceId) {
+    params.push(workspaceId, workspaceId);
+  }
   return get(
     `
     ${TRANSACTION_SELECT}
-    WHERE t.id = ?
+    ${workspaceWhere}
     `,
-    [id]
+    params
   );
 }
 
@@ -796,9 +860,17 @@ function serializeEntityRow(row) {
   };
 }
 
-async function listAccountsWithBalances(all, get, { entityId = null } = {}) {
+async function listAccountsWithBalances(
+  all,
+  get,
+  { entityId = null, workspaceId = null } = {}
+) {
   const conditions = [];
   const params = [];
+  if (workspaceId) {
+    conditions.push("e.workspace_id = ?");
+    params.push(workspaceId);
+  }
   if (entityId) {
     conditions.push("a.entity_id = ?");
     params.push(entityId);
@@ -884,8 +956,13 @@ async function listAccountsWithBalances(all, get, { entityId = null } = {}) {
   );
 }
 
-async function getAccountsTotalBalanceWithLegacy(all, get, entityId = null) {
-  const rows = await listAccountsWithBalances(all, get, { entityId });
+async function getAccountsTotalBalanceWithLegacy(
+  all,
+  get,
+  entityId = null,
+  workspaceId = null
+) {
+  const rows = await listAccountsWithBalances(all, get, { entityId, workspaceId });
   return rows.reduce((sum, row) => sum + Number(row?.balance ?? 0), 0);
 }
 
@@ -982,6 +1059,7 @@ async function resolveTransactionPayload({
   get,
   all,
   existingTransaction = null,
+  workspaceId = null,
 }) {
   const incomingType = hasField(body, "type") ? body.type : existingTransaction?.type;
   const type = normalizeTransactionType(incomingType);
@@ -1022,9 +1100,9 @@ async function resolveTransactionPayload({
 
   const [defaultCashAccountId, defaultExpenseAccountId, defaultIncomeAccountId] =
     await Promise.all([
-      getDefaultCashAccountId(get),
-      getDefaultExpenseAccountId(get),
-      getDefaultIncomeAccountId(get),
+      getDefaultCashAccountId(get, workspaceId),
+      getDefaultExpenseAccountId(get, workspaceId),
+      getDefaultIncomeAccountId(get, workspaceId),
     ]);
 
   if (!defaultCashAccountId) {
@@ -1069,15 +1147,21 @@ async function resolveTransactionPayload({
   let fromAccount = null;
   let toAccount = null;
   if (fromAccountId) {
-    fromAccount = await getAccountById(get, fromAccountId);
+    fromAccount = await getAccountById(get, fromAccountId, workspaceId);
     if (!fromAccount) {
-      return { error: "Source account does not exist" };
+      const existingSourceAccount = await getAccountById(get, fromAccountId);
+      return existingSourceAccount
+        ? { error: "Source account access forbidden", status: 403 }
+        : { error: "Source account does not exist" };
     }
   }
   if (toAccountId) {
-    toAccount = await getAccountById(get, toAccountId);
+    toAccount = await getAccountById(get, toAccountId, workspaceId);
     if (!toAccount) {
-      return { error: "Destination account does not exist" };
+      const existingDestinationAccount = await getAccountById(get, toAccountId);
+      return existingDestinationAccount
+        ? { error: "Destination account access forbidden", status: 403 }
+        : { error: "Destination account does not exist" };
     }
   }
   if (
@@ -1126,6 +1210,7 @@ async function resolveTransferPayload({
   get,
   all,
   existingTransfer = null,
+  workspaceId = null,
 }) {
   const fromAccountId = hasField(body, "from_account_id")
     ? parseOptionalAccountId(body.from_account_id)
@@ -1188,14 +1273,20 @@ async function resolveTransferPayload({
   }
 
   const [fromAccount, toAccount] = await Promise.all([
-    getAccountById(get, fromAccountId),
-    getAccountById(get, toAccountId),
+    getAccountById(get, fromAccountId, workspaceId),
+    getAccountById(get, toAccountId, workspaceId),
   ]);
   if (!fromAccount) {
-    return { error: "Source account does not exist" };
+    const existingSourceAccount = await getAccountById(get, fromAccountId);
+    return existingSourceAccount
+      ? { error: "Source account access forbidden", status: 403 }
+      : { error: "Source account does not exist" };
   }
   if (!toAccount) {
-    return { error: "Destination account does not exist" };
+    const existingDestinationAccount = await getAccountById(get, toAccountId);
+    return existingDestinationAccount
+      ? { error: "Destination account access forbidden", status: 403 }
+      : { error: "Destination account does not exist" };
   }
   if (
     normalizeCurrencyCode(fromAccount.currency_code) !==
@@ -1374,20 +1465,34 @@ async function createTransferBookkeepingRows({
   }
 }
 
-async function getTransferById(get, id) {
+async function getTransferById(get, id, workspaceId = null) {
+  const params = [id];
+  const workspaceWhere = workspaceId
+    ? "WHERE tr.id = ? AND (from_entity.workspace_id = ? OR to_entity.workspace_id = ?)"
+    : "WHERE tr.id = ?";
+  if (workspaceId) {
+    params.push(workspaceId, workspaceId);
+  }
   return get(
     `
     ${TRANSFER_SELECT}
-    WHERE tr.id = ?
+    ${workspaceWhere}
     `,
-    [id]
+    params
   );
 }
 
-async function getLegacyTransferById(get, id) {
+async function getLegacyTransferById(get, id, workspaceId = null) {
   const parsedId = Number(id);
   if (!Number.isInteger(parsedId) || parsedId <= 0) {
     return null;
+  }
+  const params = [parsedId];
+  const workspaceWhere = workspaceId
+    ? "AND (from_entity.workspace_id = ? OR to_entity.workspace_id = ?)"
+    : "";
+  if (workspaceId) {
+    params.push(workspaceId, workspaceId);
   }
   return get(
     `
@@ -1413,16 +1518,27 @@ async function getLegacyTransferById(get, id) {
     INNER JOIN accounts to_account ON to_account.id = t.to_account_id
     INNER JOIN entities to_entity ON to_entity.id = to_account.entity_id
     WHERE t.id = ? AND t.type = 'transfer'
+      ${workspaceWhere}
     `,
-    [parsedId]
+    params
   );
 }
 
-async function listTransfers(all, { entityId = null, dateFrom = "", dateTo = "" } = {}) {
+async function listTransfers(
+  all,
+  { entityId = null, workspaceId = null, dateFrom = "", dateTo = "" } = {}
+) {
   const transferConditions = [];
   const transferParams = [];
   const legacyConditions = ["t.type = 'transfer'"];
   const legacyParams = [];
+
+  if (workspaceId) {
+    transferConditions.push("(from_entity.workspace_id = ? OR to_entity.workspace_id = ?)");
+    transferParams.push(workspaceId, workspaceId);
+    legacyConditions.push("(from_entity.workspace_id = ? OR to_entity.workspace_id = ?)");
+    legacyParams.push(workspaceId, workspaceId);
+  }
 
   if (entityId) {
     transferConditions.push("(from_account.entity_id = ? OR to_account.entity_id = ?)");
@@ -1512,6 +1628,8 @@ function registerLedgerRoutes(
     parseCsvRows,
     pickCsvValue,
     isCsvRowEmpty,
+    assertEntityInWorkspace,
+    assertAccountInWorkspace,
   }
 ) {
   function parseCsvBoolean(value) {
@@ -1522,12 +1640,12 @@ function registerLedgerRoutes(
     return normalized === "true" || normalized === "1" || normalized === "yes";
   }
 
-  async function resolveTransferImportAccountId({ row, side }) {
+  async function resolveTransferImportAccountId({ row, side, workspaceId }) {
     const accountId = parseOptionalAccountId(
       pickCsvValue(row, [`${side}_account_id`, `${side}_id`])
     );
     if (accountId) {
-      const account = await getAccountById(get, accountId);
+      const account = await getAccountById(get, accountId, workspaceId);
       if (!account) {
         return { error: `${side} account does not exist` };
       }
@@ -1549,6 +1667,10 @@ function registerLedgerRoutes(
     );
     const conditions = ["LOWER(TRIM(a.name)) = LOWER(?)"];
     const params = [accountName];
+    if (workspaceId) {
+      conditions.push("e.workspace_id = ?");
+      params.push(workspaceId);
+    }
     if (entityId) {
       conditions.push("a.entity_id = ?");
       params.push(entityId);
@@ -1580,8 +1702,9 @@ function registerLedgerRoutes(
     try {
       const rows = await all(
         `
-        SELECT id, name, type, created_at, updated_at
+        SELECT id, name, type, workspace_id, created_at, updated_at
         FROM entities
+        WHERE workspace_id = ?
         ORDER BY
           CASE type
             WHEN 'personal' THEN 1
@@ -1592,6 +1715,8 @@ function registerLedgerRoutes(
           created_at ASC,
           id ASC
         `
+        ,
+        [req.workspaceId]
       );
       res.json(rows.map(serializeEntityRow));
     } catch (err) {
@@ -1608,8 +1733,14 @@ function registerLedgerRoutes(
 
     try {
       const duplicate = await get(
-        "SELECT id FROM entities WHERE LOWER(TRIM(name)) = LOWER(?) LIMIT 1",
-        [name]
+        `
+        SELECT id
+        FROM entities
+        WHERE workspace_id = ?
+          AND LOWER(TRIM(name)) = LOWER(?)
+        LIMIT 1
+        `,
+        [req.workspaceId, name]
       );
       if (duplicate) {
         return res.status(409).json({ error: "Entity name already exists" });
@@ -1619,13 +1750,13 @@ function registerLedgerRoutes(
       const entityId = createUuid();
       await run(
         `
-        INSERT INTO entities (id, name, type, created_at, updated_at)
-        VALUES (?, ?, ?, ?, ?)
+        INSERT INTO entities (id, name, type, workspace_id, created_at, updated_at)
+        VALUES (?, ?, ?, ?, ?, ?)
         `,
-        [entityId, name, type, now, now]
+        [entityId, name, type, req.workspaceId, now, now]
       );
       const row = await get(
-        "SELECT id, name, type, created_at, updated_at FROM entities WHERE id = ?",
+        "SELECT id, name, type, workspace_id, created_at, updated_at FROM entities WHERE id = ?",
         [entityId]
       );
       res.status(201).json(serializeEntityRow(row));
@@ -1645,8 +1776,8 @@ function registerLedgerRoutes(
 
     try {
       const existing = await get(
-        "SELECT id, name, type FROM entities WHERE id = ?",
-        [entityId]
+        "SELECT id, name, type, workspace_id FROM entities WHERE id = ? AND workspace_id = ?",
+        [entityId, req.workspaceId]
       );
       if (!existing) {
         return res.status(404).json({ error: "Entity not found" });
@@ -1662,10 +1793,11 @@ function registerLedgerRoutes(
         `
         SELECT id
         FROM entities
-        WHERE LOWER(TRIM(name)) = LOWER(?) AND id <> ?
+        WHERE workspace_id = ?
+          AND LOWER(TRIM(name)) = LOWER(?) AND id <> ?
         LIMIT 1
         `,
-        [name, entityId]
+        [req.workspaceId, name, entityId]
       );
       if (duplicate) {
         return res.status(409).json({ error: "Entity name already exists" });
@@ -1682,7 +1814,7 @@ function registerLedgerRoutes(
       );
 
       const row = await get(
-        "SELECT id, name, type, created_at, updated_at FROM entities WHERE id = ?",
+        "SELECT id, name, type, workspace_id, created_at, updated_at FROM entities WHERE id = ?",
         [entityId]
       );
       res.json(serializeEntityRow(row));
@@ -1699,8 +1831,8 @@ function registerLedgerRoutes(
 
     try {
       const existing = await get(
-        "SELECT id, name, type FROM entities WHERE id = ?",
-        [entityId]
+        "SELECT id, name, type FROM entities WHERE id = ? AND workspace_id = ?",
+        [entityId, req.workspaceId]
       );
       if (!existing) {
         return res.status(404).json({ error: "Entity not found" });
@@ -1716,7 +1848,10 @@ function registerLedgerRoutes(
           .json({ error: "Move or remove accounts in this entity before deleting it" });
       }
 
-      const entityCount = await get("SELECT COUNT(*) AS count FROM entities");
+      const entityCount = await get(
+        "SELECT COUNT(*) AS count FROM entities WHERE workspace_id = ?",
+        [req.workspaceId]
+      );
       if (Number(entityCount?.count ?? 0) <= 1) {
         return res.status(400).json({ error: "At least one entity is required" });
       }
@@ -1742,11 +1877,14 @@ function registerLedgerRoutes(
     }
 
     try {
-      const entity = await getEntityById(get, entityId);
+      const entity = await getEntityById(get, entityId, req.workspaceId);
       if (!entity) {
         return res.status(404).json({ error: "Entity not found" });
       }
-      const rows = await listAccountsWithBalances(all, get, { entityId });
+      const rows = await listAccountsWithBalances(all, get, {
+        entityId,
+        workspaceId: req.workspaceId,
+      });
       res.json(rows);
     } catch (err) {
       res.status(500).json({ error: "Failed to load entity accounts" });
@@ -1769,12 +1907,17 @@ function registerLedgerRoutes(
 
     try {
       if (entityId) {
-        const entity = await getEntityById(get, entityId);
+        const entity = await getEntityById(get, entityId, req.workspaceId);
         if (!entity) {
           return res.status(404).json({ error: "Entity not found" });
         }
       }
-      const rows = await listTransfers(all, { entityId, dateFrom, dateTo });
+      const rows = await listTransfers(all, {
+        entityId,
+        workspaceId: req.workspaceId,
+        dateFrom,
+        dateTo,
+      });
       res.json(rows);
     } catch (err) {
       res.status(500).json({ error: "Failed to load transfers" });
@@ -1878,6 +2021,7 @@ function registerLedgerRoutes(
         const fromAccount = await resolveTransferImportAccountId({
           row,
           side: "from",
+          workspaceId: req.workspaceId,
         });
         if (fromAccount.error) {
           errors.push({
@@ -1890,6 +2034,7 @@ function registerLedgerRoutes(
         const toAccount = await resolveTransferImportAccountId({
           row,
           side: "to",
+          workspaceId: req.workspaceId,
         });
         if (toAccount.error) {
           errors.push({
@@ -1917,6 +2062,7 @@ function registerLedgerRoutes(
           body: payload,
           get,
           all,
+          workspaceId: req.workspaceId,
         });
         if (resolved.error) {
           errors.push({
@@ -2067,9 +2213,16 @@ function registerLedgerRoutes(
     let bookkeepingExpenseId = null;
     let bookkeepingIncomeId = null;
     try {
-      const resolved = await resolveTransferPayload({ body: req.body, get, all });
-      if (resolved.error) {
-        return res.status(400).json({ error: resolved.error });
+      const workspaceResolved = await resolveTransferPayload({
+        body: req.body,
+        get,
+        all,
+        workspaceId: req.workspaceId,
+      });
+      if (workspaceResolved.error) {
+        return res
+          .status(workspaceResolved.status || 400)
+          .json({ error: workspaceResolved.error });
       }
 
       const {
@@ -2082,7 +2235,7 @@ function registerLedgerRoutes(
         fromAccount,
         toAccount,
       } =
-        resolved.payload;
+        workspaceResolved.payload;
       const isCrossEntity =
         String(fromAccount.entity_id || "") !== String(toAccount.entity_id || "");
       const resolvedBookkeeping = await resolveTransferBookkeepingPayload({
@@ -2163,7 +2316,7 @@ function registerLedgerRoutes(
         ]
       );
 
-      const row = await getTransferById(get, transferId);
+      const row = await getTransferById(get, transferId, req.workspaceId);
       res.status(201).json(serializeTransferRow(row));
     } catch (err) {
       if (bookkeepingIncomeId) {
@@ -2189,7 +2342,7 @@ function registerLedgerRoutes(
     let bookkeepingExpenseId = null;
     let bookkeepingIncomeId = null;
     try {
-      const existingTransfer = await getTransferById(get, transferId);
+      const existingTransfer = await getTransferById(get, transferId, req.workspaceId);
       if (!existingTransfer) {
         return res.status(404).json({ error: "Transfer not found" });
       }
@@ -2199,9 +2352,10 @@ function registerLedgerRoutes(
         get,
         all,
         existingTransfer,
+        workspaceId: req.workspaceId,
       });
       if (resolved.error) {
-        return res.status(400).json({ error: resolved.error });
+        return res.status(resolved.status || 400).json({ error: resolved.error });
       }
 
       const {
@@ -2301,7 +2455,7 @@ function registerLedgerRoutes(
         await run("DELETE FROM income WHERE id = ?", [existingTransfer.bookkeeping_income_id]);
       }
 
-      const row = await getTransferById(get, transferId);
+      const row = await getTransferById(get, transferId, req.workspaceId);
       res.json(serializeTransferRow(row));
     } catch (err) {
       if (bookkeepingIncomeId) {
@@ -2334,7 +2488,11 @@ function registerLedgerRoutes(
 
     try {
       if (sourceType === "legacy_transaction") {
-        const existingLegacyTransfer = await getLegacyTransferById(get, transferId);
+        const existingLegacyTransfer = await getLegacyTransferById(
+          get,
+          transferId,
+          req.workspaceId
+        );
         if (!existingLegacyTransfer) {
           return res.status(404).json({ error: "Transfer not found" });
         }
@@ -2349,7 +2507,7 @@ function registerLedgerRoutes(
       }
 
       if (sourceType === "transfer") {
-        const existingTransfer = await getTransferById(get, transferId);
+        const existingTransfer = await getTransferById(get, transferId, req.workspaceId);
         if (!existingTransfer) {
           return res.status(404).json({ error: "Transfer not found" });
         }
@@ -2374,7 +2532,7 @@ function registerLedgerRoutes(
         });
       }
 
-      const existingTransfer = await getTransferById(get, transferId);
+      const existingTransfer = await getTransferById(get, transferId, req.workspaceId);
       if (existingTransfer) {
         if (existingTransfer.fee_expense_id) {
           await run("DELETE FROM expenses WHERE id = ?", [existingTransfer.fee_expense_id]);
@@ -2396,7 +2554,11 @@ function registerLedgerRoutes(
         });
       }
 
-      const existingLegacyTransfer = await getLegacyTransferById(get, transferId);
+      const existingLegacyTransfer = await getLegacyTransferById(
+        get,
+        transferId,
+        req.workspaceId
+      );
       if (existingLegacyTransfer) {
         await run("DELETE FROM transactions WHERE id = ? AND type = 'transfer'", [
           Number(transferId),
@@ -2422,12 +2584,15 @@ function registerLedgerRoutes(
     }
     try {
       if (entityId) {
-        const entity = await getEntityById(get, entityId);
+        const entity = await getEntityById(get, entityId, req.workspaceId);
         if (!entity) {
           return res.status(404).json({ error: "Entity not found" });
         }
       }
-      const rows = await listAccountsWithBalances(all, get, { entityId });
+      const rows = await listAccountsWithBalances(all, get, {
+        entityId,
+        workspaceId: req.workspaceId,
+      });
       res.json(rows);
     } catch (err) {
       res.status(500).json({ error: "Failed to load accounts" });
@@ -2448,12 +2613,12 @@ function registerLedgerRoutes(
     }
 
     try {
-      const fallbackEntityId = await getDefaultEntityId(get);
+      const fallbackEntityId = await getDefaultEntityId(get, req.workspaceId);
       const entityId = requestedEntityId || fallbackEntityId;
       if (!entityId) {
         return res.status(400).json({ error: "Invalid account payload" });
       }
-      const entity = await getEntityById(get, entityId);
+      const entity = await getEntityById(get, entityId, req.workspaceId);
       if (!entity) {
         return res.status(400).json({ error: "Invalid account payload" });
       }
@@ -2529,14 +2694,7 @@ function registerLedgerRoutes(
     }
 
     try {
-      const existing = await get(
-        `
-        SELECT id, name, type, entity_id, institution_id, currency_code
-        FROM accounts
-        WHERE id = ?
-        `,
-        [id]
-      );
+      const existing = await getAccountById(get, id, req.workspaceId);
       if (!existing) {
         return res.status(404).json({ error: "Account not found" });
       }
@@ -2550,7 +2708,7 @@ function registerLedgerRoutes(
       if (!name || !type || !entityId) {
         return res.status(400).json({ error: "Invalid account payload" });
       }
-      const entity = await getEntityById(get, entityId);
+      const entity = await getEntityById(get, entityId, req.workspaceId);
       if (!entity) {
         return res.status(400).json({ error: "Invalid account payload" });
       }
@@ -2612,14 +2770,7 @@ function registerLedgerRoutes(
     }
 
     try {
-      const existing = await get(
-        `
-        SELECT id, name, type
-        FROM accounts
-        WHERE id = ?
-        `,
-        [id]
-      );
+      const existing = await getAccountById(get, id, req.workspaceId);
       if (!existing) {
         return res.status(404).json({ error: "Account not found" });
       }
@@ -2633,8 +2784,14 @@ function registerLedgerRoutes(
       const balanceCents = await getAccountBalanceCents(get, all, id);
       await run("DELETE FROM accounts WHERE id = ?", [id]);
 
-      const fallbackExpenseAccountId = await getDefaultCashAccountId(get);
-      const fallbackIncomeAccountId = await getDefaultBankAccountId(get);
+      const fallbackExpenseAccountId = await getDefaultCashAccountId(
+        get,
+        req.workspaceId
+      );
+      const fallbackIncomeAccountId = await getDefaultBankAccountId(
+        get,
+        req.workspaceId
+      );
       await run(
         `
         UPDATE settings
@@ -2683,8 +2840,16 @@ function registerLedgerRoutes(
     }
 
     try {
+      if (accountId) {
+        const account = await getAccountById(get, accountId, req.workspaceId);
+        if (!account) {
+          return res.status(404).json({ error: "Account not found" });
+        }
+      }
       const conditions = [];
       const params = [];
+      conditions.push("(from_entity.workspace_id = ? OR to_entity.workspace_id = ?)");
+      params.push(req.workspaceId, req.workspaceId);
 
       if (type) {
         conditions.push("t.type = ?");
@@ -2723,8 +2888,9 @@ function registerLedgerRoutes(
         const incomeConditions = [
           "COALESCE(i.is_transfer_bookkeeping, 0) = 0",
           "i.to_account_id IS NOT NULL",
+          "to_entity.workspace_id = ?",
         ];
-        const incomeParams = [];
+        const incomeParams = [req.workspaceId];
         if (accountId) {
           incomeConditions.push("i.to_account_id = ?");
           incomeParams.push(accountId);
@@ -2773,8 +2939,9 @@ function registerLedgerRoutes(
         const expenseConditions = [
           "COALESCE(e.is_transfer_bookkeeping, 0) = 0",
           "e.from_account_id IS NOT NULL",
+          "from_entity.workspace_id = ?",
         ];
-        const expenseParams = [];
+        const expenseParams = [req.workspaceId];
         if (accountId) {
           expenseConditions.push("e.from_account_id = ?");
           expenseParams.push(accountId);
@@ -2824,7 +2991,8 @@ function registerLedgerRoutes(
 
       if (shouldIncludeTransfers) {
         const transferConditions = [];
-        const transferParams = [];
+        const transferParams = [req.workspaceId, req.workspaceId];
+        transferConditions.push("(from_entity.workspace_id = ? OR to_entity.workspace_id = ?)");
 
         if (accountId) {
           transferConditions.push("(tr.from_account_id = ? OR tr.to_account_id = ?)");
@@ -2908,9 +3076,16 @@ function registerLedgerRoutes(
 
   app.post("/transactions", async (req, res) => {
     try {
-      const resolved = await resolveTransactionPayload({ body: req.body, get, all });
-      if (resolved.error) {
-        return res.status(400).json({ error: resolved.error });
+      const workspaceResolved = await resolveTransactionPayload({
+        body: req.body,
+        get,
+        all,
+        workspaceId: req.workspaceId,
+      });
+      if (workspaceResolved.error) {
+        return res
+          .status(workspaceResolved.status || 400)
+          .json({ error: workspaceResolved.error });
       }
 
       const {
@@ -2921,7 +3096,7 @@ function registerLedgerRoutes(
         category,
         note,
         createdAt,
-      } = resolved.payload;
+      } = workspaceResolved.payload;
 
       const result = await run(
         `
@@ -2939,9 +3114,10 @@ function registerLedgerRoutes(
         [type, amountCents, fromAccountId, toAccountId, category, note, createdAt]
       );
 
-      const row = await getTransactionById(get, result.lastID);
+      const row = await getTransactionById(get, result.lastID, req.workspaceId);
       res.status(201).json(serializeTransactionRow(row));
     } catch (err) {
+      console.error("Failed to create transaction:", err);
       res.status(500).json({ error: "Failed to create transaction" });
     }
   });
@@ -2953,22 +3129,7 @@ function registerLedgerRoutes(
     }
 
     try {
-      const existing = await get(
-        `
-        SELECT
-          id,
-          type,
-          amount_cents,
-          from_account_id,
-          to_account_id,
-          category,
-          note,
-          created_at
-        FROM transactions
-        WHERE id = ?
-        `,
-        [id]
-      );
+      const existing = await getTransactionById(get, id, req.workspaceId);
       if (!existing) {
         return res.status(404).json({ error: "Transaction not found" });
       }
@@ -2978,9 +3139,10 @@ function registerLedgerRoutes(
         get,
         all,
         existingTransaction: existing,
+        workspaceId: req.workspaceId,
       });
       if (resolved.error) {
-        return res.status(400).json({ error: resolved.error });
+        return res.status(resolved.status || 400).json({ error: resolved.error });
       }
 
       const {
@@ -3009,7 +3171,7 @@ function registerLedgerRoutes(
         [type, amountCents, fromAccountId, toAccountId, category, note, createdAt, id]
       );
 
-      const row = await getTransactionById(get, id);
+      const row = await getTransactionById(get, id, req.workspaceId);
       res.json(serializeTransactionRow(row));
     } catch (err) {
       res.status(500).json({ error: "Failed to update transaction" });
@@ -3023,7 +3185,7 @@ function registerLedgerRoutes(
     }
 
     try {
-      const existing = await getTransactionById(get, id);
+      const existing = await getTransactionById(get, id, req.workspaceId);
       if (!existing) {
         return res.status(404).json({ error: "Transaction not found" });
       }

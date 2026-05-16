@@ -18,6 +18,8 @@ function registerDebtRoutes(app, deps) {
     resolveEntityDefaultAccountId,
     normalizeCsvHeader,
     isCsvRowEmpty,
+    assertEntityInWorkspace,
+    assertAccountInWorkspace,
   } = deps;
 
   async function resolveExpensePostingAccountId(rawAccountId, entityId) {
@@ -84,7 +86,7 @@ function registerDebtRoutes(app, deps) {
     }
     try {
       if (entityId) {
-        const entity = await getEntityById(entityId);
+        const entity = await getEntityById(entityId, req.workspaceId);
         if (!entity) {
           return res.status(404).json({ error: "Entity not found" });
         }
@@ -106,12 +108,13 @@ function registerDebtRoutes(app, deps) {
           d.debt_category_id,
           c.name AS debt_category_name
         FROM debts d
-        LEFT JOIN entities ent ON d.entity_id = ent.id
+        INNER JOIN entities ent ON d.entity_id = ent.id
         LEFT JOIN categories c ON d.debt_category_id = c.id
-        ${entityId ? "WHERE d.entity_id = ?" : ""}
+        WHERE ent.workspace_id = ?
+        ${entityId ? "AND d.entity_id = ?" : ""}
         ORDER BY d.spent_at DESC, d.id DESC
         `,
-        entityId ? [entityId] : []
+        entityId ? [req.workspaceId, entityId] : [req.workspaceId]
       );
       res.json(rows);
     } catch (err) {
@@ -127,7 +130,7 @@ function registerDebtRoutes(app, deps) {
     }
     try {
       if (entityId) {
-        const entity = await getEntityById(entityId);
+        const entity = await getEntityById(entityId, req.workspaceId);
         if (!entity) {
           return res.status(404).json({ error: "Entity not found" });
         }
@@ -144,21 +147,26 @@ function registerDebtRoutes(app, deps) {
           d1.debt_category_id AS last_category_id,
           c.name AS last_category_name
         FROM debts d1
-        LEFT JOIN entities ent ON d1.entity_id = ent.id
+        INNER JOIN entities ent ON d1.entity_id = ent.id
         LEFT JOIN categories c ON d1.debt_category_id = c.id
-        WHERE d1.loan_origin IS NOT NULL AND d1.loan_origin <> '' AND d1.amount > 0
+        WHERE ent.workspace_id = ?
+          AND d1.loan_origin IS NOT NULL AND d1.loan_origin <> '' AND d1.amount > 0
         ${entityId ? "AND d1.entity_id = ?" : ""}
         AND d1.id = (
           SELECT d2.id
           FROM debts d2
-          WHERE d2.loan_origin = d1.loan_origin AND d2.amount > 0
+          INNER JOIN entities ent2 ON ent2.id = d2.entity_id
+          WHERE ent2.workspace_id = ?
+            AND d2.loan_origin = d1.loan_origin AND d2.amount > 0
           ${entityId ? "AND d2.entity_id = ?" : ""}
           ORDER BY d2.spent_at DESC, d2.id DESC
           LIMIT 1
         )
         ORDER BY d1.loan_origin ASC
         `,
-        entityId ? [entityId, entityId] : []
+        entityId
+          ? [req.workspaceId, entityId, req.workspaceId, entityId]
+          : [req.workspaceId, req.workspaceId]
       );
       res.json(rows);
     } catch (err) {
@@ -174,7 +182,7 @@ function registerDebtRoutes(app, deps) {
     }
     try {
       if (entityId) {
-        const entity = await getEntityById(entityId);
+        const entity = await getEntityById(entityId, req.workspaceId);
         if (!entity) {
           return res.status(404).json({ error: "Entity not found" });
         }
@@ -189,7 +197,9 @@ function registerDebtRoutes(app, deps) {
         FROM (
           SELECT DISTINCT loan_origin
           FROM debts
-          WHERE loan_origin IS NOT NULL AND TRIM(loan_origin) <> ''
+          INNER JOIN entities debt_entities ON debt_entities.id = debts.entity_id
+          WHERE debt_entities.workspace_id = ?
+            AND loan_origin IS NOT NULL AND TRIM(loan_origin) <> ''
           ${entityId ? "AND entity_id = ?" : ""}
           UNION
           SELECT loan_origin
@@ -200,7 +210,9 @@ function registerDebtRoutes(app, deps) {
         LEFT JOIN (
           SELECT loan_origin, COUNT(*) AS debt_count
           FROM debts
-          WHERE loan_origin IS NOT NULL AND TRIM(loan_origin) <> ''
+          INNER JOIN entities debt_count_entities ON debt_count_entities.id = debts.entity_id
+          WHERE debt_count_entities.workspace_id = ?
+            AND loan_origin IS NOT NULL AND TRIM(loan_origin) <> ''
           ${entityId ? "AND entity_id = ?" : ""}
           GROUP BY loan_origin
         ) debt_counts
@@ -208,7 +220,9 @@ function registerDebtRoutes(app, deps) {
         WHERE origins.loan_origin IS NOT NULL AND TRIM(origins.loan_origin) <> ''
         ORDER BY origins.loan_origin ASC
         `,
-        entityId ? [entityId, entityId] : []
+        entityId
+          ? [req.workspaceId, entityId, req.workspaceId, entityId]
+          : [req.workspaceId, req.workspaceId]
       );
       res.json(rows);
     } catch (err) {
@@ -351,7 +365,10 @@ function registerDebtRoutes(app, deps) {
     }
 
     try {
-      const resolvedEntityId = await resolveWriteEntityId(entity_id);
+      const resolvedEntityId = await resolveWriteEntityId(
+        entity_id,
+        req.workspaceId
+      );
       if (!resolvedEntityId) {
         return res.status(400).json({ error: "Invalid debt payload" });
       }
@@ -427,6 +444,18 @@ function registerDebtRoutes(app, deps) {
     }
 
     try {
+      const existing = await get(
+        `
+        SELECT d.id
+        FROM debts d
+        INNER JOIN entities e ON e.id = d.entity_id
+        WHERE d.id = ? AND e.workspace_id = ?
+        `,
+        [id, req.workspaceId]
+      );
+      if (!existing) {
+        return res.status(404).json({ error: "Debt not found" });
+      }
       const result = await run(
         `
         UPDATE debts
@@ -501,7 +530,10 @@ function registerDebtRoutes(app, deps) {
     }
 
     try {
-      const resolvedEntityId = await resolveWriteEntityId(requestedEntityId);
+      const resolvedEntityId = await resolveWriteEntityId(
+        requestedEntityId,
+        req.workspaceId
+      );
       if (!resolvedEntityId) {
         return res.status(400).json({ error: "Invalid debt payoff payload" });
       }
@@ -656,7 +688,10 @@ function registerDebtRoutes(app, deps) {
     }
 
     try {
-      const resolvedEntityId = await resolveWriteEntityId(requestedEntityId);
+      const resolvedEntityId = await resolveWriteEntityId(
+        requestedEntityId,
+        req.workspaceId
+      );
       if (!resolvedEntityId) {
         return res.status(400).json({ error: "Invalid debt import payload" });
       }
@@ -851,6 +886,18 @@ function registerDebtRoutes(app, deps) {
       return res.status(400).json({ error: "Invalid debt id" });
     }
     try {
+      const existing = await get(
+        `
+        SELECT d.id
+        FROM debts d
+        INNER JOIN entities e ON e.id = d.entity_id
+        WHERE d.id = ? AND e.workspace_id = ?
+        `,
+        [id, req.workspaceId]
+      );
+      if (!existing) {
+        return res.status(404).json({ error: "Debt not found" });
+      }
       const result = await run("DELETE FROM debts WHERE id = ?", [id]);
       if (result.changes === 0) {
         return res.status(404).json({ error: "Debt not found" });
@@ -872,6 +919,18 @@ function registerDebtRoutes(app, deps) {
       return res.status(400).json({ error: "Invalid debt category update" });
     }
     try {
+      const existing = await get(
+        `
+        SELECT d.id
+        FROM debts d
+        INNER JOIN entities e ON e.id = d.entity_id
+        WHERE d.id = ? AND e.workspace_id = ?
+        `,
+        [id, req.workspaceId]
+      );
+      if (!existing) {
+        return res.status(404).json({ error: "Debt not found" });
+      }
       const result = await run(
         "UPDATE debts SET debt_category_id = ? WHERE id = ?",
         [categoryId, id]

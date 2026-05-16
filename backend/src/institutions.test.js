@@ -4,6 +4,7 @@ const fs = require("node:fs");
 const os = require("node:os");
 const path = require("node:path");
 const { spawn } = require("node:child_process");
+const { loginDefaultUser } = require("./testAuth");
 
 const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), "finance-institutions-"));
 const dbPath = path.join(tmpDir, "finance.test.db");
@@ -12,6 +13,7 @@ const baseUrl = `http://127.0.0.1:${port}`;
 
 let serverProcess = null;
 let serverExit = null;
+let authState = null;
 
 function sleep(ms) {
   return new Promise((resolve) => {
@@ -24,6 +26,10 @@ async function request(pathname, { method = "GET", body } = {}) {
     method,
     headers: {
       "Content-Type": "application/json",
+      ...(authState?.token ? { Authorization: `Bearer ${authState.token}` } : {}),
+      ...(authState?.workspaceId
+        ? { "x-workspace-id": authState.workspaceId }
+        : {}),
     },
     body: body === undefined ? undefined : JSON.stringify(body),
   });
@@ -51,7 +57,7 @@ async function waitForServerReady() {
       throw new Error(`Server exited before ready (code ${serverExit.code})`);
     }
     try {
-      const response = await request("/institutions");
+      const response = await fetch(`${baseUrl}/health`);
       if (response.status === 200) {
         return;
       }
@@ -79,6 +85,7 @@ test.before(async () => {
   });
 
   await waitForServerReady();
+  authState = await loginDefaultUser(baseUrl);
 });
 
 test.after(async () => {

@@ -44,25 +44,30 @@ function createProjectionScenarioService(deps) {
     validateProjectionCashflowAssumptionsReferences,
     createUuid,
     buildProjectionResponsePayload,
+    assertEntityInWorkspace,
   } = deps;
 
-  async function assertEntityExists(entityId) {
-    const entity = await getEntityById(entityId);
+  async function assertEntityExists(entityId, workspaceId) {
+    const entity = await getEntityById(entityId, workspaceId);
     if (!entity) {
       throw new AppError("Entity not found", 404);
     }
   }
 
-  async function normalizeValidatedInput(input) {
+  async function normalizeValidatedInput(input, workspaceId) {
     const normalized = normalizeProjectionScenarioInput(input, {
-      defaultWorkspaceId: DEFAULT_PROJECTION_WORKSPACE_ID,
+      defaultWorkspaceId: workspaceId || DEFAULT_PROJECTION_WORKSPACE_ID,
     });
-    const resolvedEntityId = await resolveWriteEntityId(normalized.entity_id);
+    const resolvedEntityId = await resolveWriteEntityId(
+      normalized.entity_id,
+      workspaceId
+    );
     const validated = validateProjectionScenarioInput({
       ...normalized,
+      workspace_id: workspaceId || normalized.workspace_id,
       entity_id: resolvedEntityId,
     });
-    await assertEntityExists(validated.entity_id);
+    await assertEntityExists(validated.entity_id, workspaceId);
     const validRefs = await validateProjectionCashflowAssumptionsReferences(
       validated.cashflow_assumptions
     );
@@ -73,14 +78,15 @@ function createProjectionScenarioService(deps) {
     return validated;
   }
 
-  async function getScenarioRowOrThrow(id) {
+  async function getScenarioRowOrThrow(id, workspaceId) {
     const row = await get(
       `
       ${PROJECTION_SCENARIO_SELECT}
       WHERE p.id = ?
+        AND p.workspace_id = ?
       LIMIT 1
       `,
-      [id]
+      [id, workspaceId]
     );
     if (!row) {
       throw new AppError("Projection scenario not found", 404);
@@ -88,15 +94,15 @@ function createProjectionScenarioService(deps) {
     return row;
   }
 
-  async function list(query = {}) {
+  async function list(query = {}, workspaceId) {
     const filters = normalizeProjectionScenarioFilters(query, {
-      defaultWorkspaceId: DEFAULT_PROJECTION_WORKSPACE_ID,
+      defaultWorkspaceId: workspaceId || DEFAULT_PROJECTION_WORKSPACE_ID,
     });
     if (query.entity_id !== undefined && !filters.entity_id) {
       throw new AppError("Invalid projection filters", 400);
     }
     if (filters.entity_id) {
-      await assertEntityExists(filters.entity_id);
+      await assertEntityExists(filters.entity_id, workspaceId);
     }
     const historyCache = new Map();
     const rows = await all(
@@ -126,11 +132,11 @@ function createProjectionScenarioService(deps) {
     );
   }
 
-  async function preview(body = {}) {
+  async function preview(body = {}, workspaceId) {
     const validated = await normalizeValidatedInput({
       ...body,
       name: body?.name || "Preview",
-    });
+    }, workspaceId);
     const result = await buildProjectionResultForScenario({
       id: "preview",
       workspace_id: validated.workspace_id,
@@ -151,8 +157,8 @@ function createProjectionScenarioService(deps) {
     return { result };
   }
 
-  async function create(body = {}) {
-    const validated = await normalizeValidatedInput(body);
+  async function create(body = {}, workspaceId) {
+    const validated = await normalizeValidatedInput(body, workspaceId);
     const id = createUuid();
     const now = new Date().toISOString();
     await run(
@@ -195,7 +201,7 @@ function createProjectionScenarioService(deps) {
       ]
     );
     const payload = await buildProjectionResponsePayload(
-      await getScenarioRowOrThrow(id)
+      await getScenarioRowOrThrow(id, workspaceId)
     );
     return {
       ...payload.scenario,
@@ -203,14 +209,14 @@ function createProjectionScenarioService(deps) {
     };
   }
 
-  async function getById(rawId) {
+  async function getById(rawId, workspaceId) {
     const id = normalizeProjectionScenarioId(rawId);
-    return buildProjectionResponsePayload(await getScenarioRowOrThrow(id));
+    return buildProjectionResponsePayload(await getScenarioRowOrThrow(id, workspaceId));
   }
 
-  async function update(rawId, body = {}) {
+  async function update(rawId, body = {}, workspaceId) {
     const id = normalizeProjectionScenarioId(rawId);
-    const existingRow = await getScenarioRowOrThrow(id);
+    const existingRow = await getScenarioRowOrThrow(id, workspaceId);
     const existing = mapProjectionScenarioRow(existingRow);
     const validated = await normalizeValidatedInput({
       workspace_id:
@@ -244,7 +250,7 @@ function createProjectionScenarioService(deps) {
           ? existing.cashflow_assumptions
           : body.cashflow_assumptions,
       notes: body?.notes === undefined ? existing.notes : body.notes,
-    });
+    }, workspaceId);
 
     const updatedAt = new Date().toISOString();
     const result = await run(
@@ -287,7 +293,7 @@ function createProjectionScenarioService(deps) {
       throw new AppError("Projection scenario not found", 404);
     }
     const payload = await buildProjectionResponsePayload(
-      await getScenarioRowOrThrow(id)
+      await getScenarioRowOrThrow(id, workspaceId)
     );
     return {
       ...payload.scenario,
@@ -295,18 +301,21 @@ function createProjectionScenarioService(deps) {
     };
   }
 
-  async function remove(rawId) {
+  async function remove(rawId, workspaceId) {
     const id = normalizeProjectionScenarioId(rawId);
-    const result = await run("DELETE FROM projection_scenarios WHERE id = ?", [id]);
+    const result = await run(
+      "DELETE FROM projection_scenarios WHERE id = ? AND workspace_id = ?",
+      [id, workspaceId]
+    );
     if (result.changes === 0) {
       throw new AppError("Projection scenario not found", 404);
     }
     return { ok: true };
   }
 
-  async function duplicate(rawId) {
+  async function duplicate(rawId, workspaceId) {
     const id = normalizeProjectionScenarioId(rawId);
-    const row = await getScenarioRowOrThrow(id);
+    const row = await getScenarioRowOrThrow(id, workspaceId);
     const scenario = mapProjectionScenarioRow(row);
     const duplicateId = createUuid();
     const now = new Date().toISOString();
@@ -350,7 +359,7 @@ function createProjectionScenarioService(deps) {
       ]
     );
     const payload = await buildProjectionResponsePayload(
-      await getScenarioRowOrThrow(duplicateId)
+      await getScenarioRowOrThrow(duplicateId, workspaceId)
     );
     return {
       ...payload.scenario,

@@ -1,9 +1,14 @@
 const API_BASE = import.meta.env.VITE_API_BASE || "/api";
+import { getActiveWorkspaceId, getAuthToken } from "./session";
 
 export async function apiFetch(path, options = {}) {
+  const token = getAuthToken();
+  const workspaceId = getActiveWorkspaceId();
   const res = await fetch(`${API_BASE}${path}`, {
     headers: {
       "Content-Type": "application/json",
+      ...(token ? { Authorization: `Bearer ${token}` } : {}),
+      ...(workspaceId ? { "x-workspace-id": workspaceId } : {}),
       ...(options.headers || {}),
     },
     ...options,

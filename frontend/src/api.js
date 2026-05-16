@@ -1,8 +1,15 @@
 const API_BASE = import.meta.env.VITE_API_BASE || "/api";
+import { getActiveWorkspaceId, getAuthToken } from "./api/session";
 
 async function request(path, options = {}) {
+  const token = getAuthToken();
+  const workspaceId = getActiveWorkspaceId();
   const res = await fetch(`${API_BASE}${path}`, {
-    headers: { "Content-Type": "application/json" },
+    headers: {
+      "Content-Type": "application/json",
+      ...(token ? { Authorization: `Bearer ${token}` } : {}),
+      ...(workspaceId ? { "x-workspace-id": workspaceId } : {}),
+    },
     ...options,
   });
 
@@ -21,7 +28,14 @@ async function request(path, options = {}) {
 }
 
 async function requestFile(path, options = {}) {
+  const token = getAuthToken();
+  const workspaceId = getActiveWorkspaceId();
   const res = await fetch(`${API_BASE}${path}`, {
+    headers: {
+      ...(token ? { Authorization: `Bearer ${token}` } : {}),
+      ...(workspaceId ? { "x-workspace-id": workspaceId } : {}),
+      ...(options.headers || {}),
+    },
     ...options,
   });
 
@@ -56,6 +70,34 @@ async function requestFile(path, options = {}) {
 }
 
 export const api = {
+  signup: (payload) =>
+    request("/auth/signup", { method: "POST", body: JSON.stringify(payload) }),
+  login: (payload) =>
+    request("/auth/login", { method: "POST", body: JSON.stringify(payload) }),
+  logout: () => request("/auth/logout", { method: "POST" }),
+  getMe: () => request("/auth/me"),
+  getWorkspaces: () => request("/workspaces"),
+  createWorkspace: (payload) =>
+    request("/workspaces", { method: "POST", body: JSON.stringify(payload) }),
+  getWorkspace: (workspaceId) =>
+    request(`/workspaces/${encodeURIComponent(String(workspaceId))}`),
+  updateWorkspace: (workspaceId, payload) =>
+    request(`/workspaces/${encodeURIComponent(String(workspaceId))}`, {
+      method: "PATCH",
+      body: JSON.stringify(payload),
+    }),
+  getWorkspaceMembers: (workspaceId) =>
+    request(`/workspaces/${encodeURIComponent(String(workspaceId))}/members`),
+  createWorkspaceInvite: (workspaceId, payload) =>
+    request(`/workspaces/${encodeURIComponent(String(workspaceId))}/invites`, {
+      method: "POST",
+      body: JSON.stringify(payload),
+    }),
+  getInvite: (token) => request(`/invites/${encodeURIComponent(String(token))}`),
+  acceptInvite: (token) =>
+    request(`/invites/${encodeURIComponent(String(token))}/accept`, {
+      method: "POST",
+    }),
   getSettings: () => request("/settings"),
   setBaseBalance: (base_balance) =>
     request("/settings/base-balance", {

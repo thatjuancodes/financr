@@ -554,6 +554,7 @@ function registerBudgetRoutes(app, deps) {
     resolveWriteEntityId,
     isValidDate,
     todayISO,
+    assertEntityInWorkspace,
   } = deps;
 
   const serialize = (row) => serializeBudgetRow(row, { isValidDate, todayISO });
@@ -567,7 +568,7 @@ function registerBudgetRoutes(app, deps) {
 
     try {
       if (entityId) {
-        const entity = await getEntityById(entityId);
+        const entity = await getEntityById(entityId, req.workspaceId);
         if (!entity) {
           return res.status(404).json({ error: "Entity not found" });
         }
@@ -595,11 +596,12 @@ function registerBudgetRoutes(app, deps) {
           b.created_at,
           b.updated_at
         FROM budgets b
-        LEFT JOIN entities ent ON ent.id = b.entity_id
-        ${entityId ? "WHERE b.entity_id = ?" : ""}
+        INNER JOIN entities ent ON ent.id = b.entity_id
+        WHERE ent.workspace_id = ?
+        ${entityId ? "AND b.entity_id = ?" : ""}
         ORDER BY b.is_active DESC, b.start_date ASC, b.id ASC
         `,
-        entityId ? [entityId] : []
+        entityId ? [req.workspaceId, entityId] : [req.workspaceId]
       );
 
       res.json(rows.map(serialize));
@@ -615,7 +617,10 @@ function registerBudgetRoutes(app, deps) {
     }
 
     try {
-      const resolvedEntityId = await resolveWriteEntityId(payload.entity_id);
+      const resolvedEntityId = await resolveWriteEntityId(
+        payload.entity_id,
+        req.workspaceId
+      );
       if (!resolvedEntityId) {
         return res.status(400).json({ error: "Invalid budget payload" });
       }
@@ -703,12 +708,23 @@ function registerBudgetRoutes(app, deps) {
     }
 
     try {
-      const existing = await get("SELECT id, entity_id FROM budgets WHERE id = ?", [id]);
+      const existing = await get(
+        `
+        SELECT b.id, b.entity_id
+        FROM budgets b
+        INNER JOIN entities e ON e.id = b.entity_id
+        WHERE b.id = ? AND e.workspace_id = ?
+        `,
+        [id, req.workspaceId]
+      );
       if (!existing) {
         return res.status(404).json({ error: "Budget not found" });
       }
 
-      const resolvedEntityId = await resolveWriteEntityId(payload.entity_id);
+      const resolvedEntityId = await resolveWriteEntityId(
+        payload.entity_id,
+        req.workspaceId
+      );
       if (!resolvedEntityId) {
         return res.status(400).json({ error: "Invalid budget payload" });
       }
@@ -798,6 +814,18 @@ function registerBudgetRoutes(app, deps) {
     }
 
     try {
+      const existing = await get(
+        `
+        SELECT b.id
+        FROM budgets b
+        INNER JOIN entities e ON e.id = b.entity_id
+        WHERE b.id = ? AND e.workspace_id = ?
+        `,
+        [id, req.workspaceId]
+      );
+      if (!existing) {
+        return res.status(404).json({ error: "Budget not found" });
+      }
       const result = await run("DELETE FROM budgets WHERE id = ?", [id]);
       if (result.changes === 0) {
         return res.status(404).json({ error: "Budget not found" });

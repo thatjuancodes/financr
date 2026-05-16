@@ -1,6 +1,6 @@
 import { useState, useEffect } from "react";
 import { Link, useLocation } from "react-router-dom";
-import EntitySwitcher from "./EntitySwitcher";
+import HouseholdSwitcher from "./HouseholdSwitcher";
 import { useFinanceData } from "@/contexts/FinanceDataContext";
 
 const navLinks = [
@@ -8,7 +8,6 @@ const navLinks = [
   { path: "/transactions", label: "Transactions", icon: "ri-exchange-dollar-line" },
   { path: "/recurring", label: "Recurring", icon: "ri-repeat-line" },
   { path: "/reporting", label: "Reporting", icon: "ri-file-chart-line" },
-  { path: "/settings", label: "Settings", icon: "ri-sliders-line" },
 ];
 
 export default function Navbar() {
@@ -111,7 +110,7 @@ export default function Navbar() {
               </span>
             ) : null}
           </Link>
-          <EntitySwitcher />
+          <HouseholdSwitcher />
           <button
             className="md:hidden w-8 h-8 flex items-center justify-center"
             onClick={() => setMobileOpen(!mobileOpen)}
@@ -135,12 +134,12 @@ export default function Navbar() {
                     ? "bg-accent-light text-accent-dark"
                     : "text-text-secondary"
                 }`}
-              >
-                <i className={`${link.icon} text-base`} />
+            >
+              <i className={`${link.icon} text-base`} />
                 <span>{link.label}</span>
-              </Link>
-            );
-          })}
+            </Link>
+          );
+        })}
         </div>
       )}
     </header>

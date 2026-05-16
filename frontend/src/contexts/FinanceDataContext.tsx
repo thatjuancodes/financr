@@ -5,6 +5,8 @@ import {
   ALL_ENTITIES_ID,
   scopedTransactions as scopeTransactions,
 } from "@/lib/finance";
+import { useAuth } from "@/contexts/AuthContext";
+import { useWorkspace } from "@/contexts/WorkspaceContext";
 import type {
   AccountRecord,
   BalanceRecord,
@@ -92,6 +94,8 @@ function buildScopedEntityId(selectedEntityId: string) {
 }
 
 export function FinanceDataProvider({ children }: { children: React.ReactNode }) {
+  const { currentUser, loading: authLoading } = useAuth();
+  const { activeWorkspaceId, loading: workspaceLoading } = useWorkspace();
   const [loading, setLoading] = React.useState(true);
   const [error, setError] = React.useState("");
   const [notice, setNotice] = React.useState("");
@@ -122,6 +126,25 @@ export function FinanceDataProvider({ children }: { children: React.ReactNode })
   }, []);
 
   const refresh = React.useCallback(async () => {
+    if (!currentUser || !activeWorkspaceId) {
+      setSettings(null);
+      setEntities([]);
+      setAccounts([]);
+      setIncomeList([]);
+      setExpenseList([]);
+      setDebtList([]);
+      setLoanOriginConfigs([]);
+      setTransactions([]);
+      setRecurringItems([]);
+      setPendingRecurringItems([]);
+      setCategories([]);
+      setIncomeCategories([]);
+      setBudgets([]);
+      setBalance(null);
+      setLoading(false);
+      setError("");
+      return;
+    }
     const entityId = buildScopedEntityId(selectedEntityId);
     setLoading(true);
     setError("");
@@ -177,11 +200,24 @@ export function FinanceDataProvider({ children }: { children: React.ReactNode })
     } finally {
       setLoading(false);
     }
-  }, [selectedEntityId]);
+  }, [activeWorkspaceId, currentUser, selectedEntityId]);
 
   React.useEffect(() => {
-    refresh();
-  }, [refresh]);
+    if (authLoading || workspaceLoading) {
+      return;
+    }
+    void refresh();
+  }, [authLoading, workspaceLoading, refresh]);
+
+  React.useEffect(() => {
+    if (
+      selectedEntityId !== ALL_ENTITIES_ID &&
+      entities.length > 0 &&
+      !entities.some((entity) => entity.id === selectedEntityId)
+    ) {
+      setSelectedEntityId(ALL_ENTITIES_ID);
+    }
+  }, [entities, selectedEntityId, setSelectedEntityId]);
 
   const runMutation = React.useCallback(async (action: () => Promise<any>, successMessage: string) => {
     setError("");

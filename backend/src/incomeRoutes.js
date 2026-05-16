@@ -16,6 +16,8 @@ function registerIncomeRoutes(app, deps) {
     resolveWriteEntityId,
     normalizeCsvHeader,
     isCsvRowEmpty,
+    assertEntityInWorkspace,
+    assertAccountInWorkspace,
   } = deps;
 
   function normalizeOptionalString(value) {
@@ -101,7 +103,7 @@ function registerIncomeRoutes(app, deps) {
     }
     try {
       if (entityId) {
-        const entity = await getEntityById(entityId);
+        const entity = await getEntityById(entityId, req.workspaceId);
         if (!entity) {
           return res.status(404).json({ error: "Entity not found" });
         }
@@ -121,13 +123,14 @@ function registerIncomeRoutes(app, deps) {
           i.income_category_id,
           c.name AS income_category_name
         FROM income i
-        LEFT JOIN entities e ON i.entity_id = e.id
+        INNER JOIN entities e ON i.entity_id = e.id
         LEFT JOIN accounts a ON i.to_account_id = a.id
         LEFT JOIN income_categories c ON i.income_category_id = c.id
-        ${entityId ? "WHERE i.entity_id = ?" : ""}
+        WHERE e.workspace_id = ?
+        ${entityId ? "AND i.entity_id = ?" : ""}
         ORDER BY i.received_date DESC, i.id DESC
         `,
-        entityId ? [entityId] : []
+        entityId ? [req.workspaceId, entityId] : [req.workspaceId]
       );
       res.json(rows);
     } catch (err) {
@@ -159,7 +162,20 @@ function registerIncomeRoutes(app, deps) {
     }
 
     try {
-      const resolvedEntityId = await resolveWriteEntityId(entity_id);
+      if (entity_id !== undefined && entity_id !== null && entity_id !== "") {
+        await assertEntityInWorkspace({ get }, String(entity_id).trim(), req.workspaceId);
+      }
+      if (to_account_id !== undefined && to_account_id !== null && to_account_id !== "") {
+        await assertAccountInWorkspace(
+          { get },
+          Number(to_account_id),
+          req.workspaceId
+        );
+      }
+      const resolvedEntityId = await resolveWriteEntityId(
+        entity_id,
+        req.workspaceId
+      );
       if (!resolvedEntityId) {
         return res.status(400).json({ error: "Invalid income payload" });
       }
@@ -215,7 +231,9 @@ function registerIncomeRoutes(app, deps) {
 
       res.status(201).json(row);
     } catch (err) {
-      res.status(500).json({ error: "Failed to add income" });
+      res.status(err?.status || 500).json({
+        error: err?.message || "Failed to add income",
+      });
     }
   });
 
@@ -241,7 +259,10 @@ function registerIncomeRoutes(app, deps) {
     }
 
     try {
-      const resolvedEntityId = await resolveWriteEntityId(requestedEntityId);
+      const resolvedEntityId = await resolveWriteEntityId(
+        requestedEntityId,
+        req.workspaceId
+      );
       if (!resolvedEntityId) {
         return res.status(400).json({ error: "Invalid income import payload" });
       }
@@ -474,8 +495,13 @@ function registerIncomeRoutes(app, deps) {
         }
       }
       const existing = await get(
-        "SELECT id, entity_id, to_account_id FROM income WHERE id = ?",
-        [id]
+        `
+        SELECT i.id, i.entity_id, i.to_account_id
+        FROM income i
+        INNER JOIN entities e ON e.id = i.entity_id
+        WHERE i.id = ? AND e.workspace_id = ?
+        `,
+        [id, req.workspaceId]
       );
       if (!existing) {
         return res.status(404).json({ error: "Income not found" });
@@ -532,6 +558,18 @@ function registerIncomeRoutes(app, deps) {
       return res.status(400).json({ error: "Invalid income id" });
     }
     try {
+      const existing = await get(
+        `
+        SELECT i.id
+        FROM income i
+        INNER JOIN entities e ON e.id = i.entity_id
+        WHERE i.id = ? AND e.workspace_id = ?
+        `,
+        [id, req.workspaceId]
+      );
+      if (!existing) {
+        return res.status(404).json({ error: "Income not found" });
+      }
       const result = await run("DELETE FROM income WHERE id = ?", [id]);
       if (result.changes === 0) {
         return res.status(404).json({ error: "Income not found" });
@@ -562,7 +600,18 @@ function registerIncomeRoutes(app, deps) {
           return res.status(400).json({ error: "Invalid income category update" });
         }
       }
-
+      const existing = await get(
+        `
+        SELECT i.id
+        FROM income i
+        INNER JOIN entities e ON e.id = i.entity_id
+        WHERE i.id = ? AND e.workspace_id = ?
+        `,
+        [id, req.workspaceId]
+      );
+      if (!existing) {
+        return res.status(404).json({ error: "Income not found" });
+      }
       const result = await run(
         "UPDATE income SET income_category_id = ? WHERE id = ?",
         [categoryId, id]

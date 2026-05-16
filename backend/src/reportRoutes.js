@@ -19,6 +19,7 @@ function registerReportRoutes(app, deps) {
     getLastClosedMonthKey,
     isValidMonthKey,
     buildCsv,
+    assertEntityInWorkspace,
   } = deps;
 
   app.get("/monthly-reports", async (req, res) => {
@@ -38,26 +39,31 @@ function registerReportRoutes(app, deps) {
 
     try {
       if (entityId) {
-        const entity = await getEntityById(entityId);
+        const entity = await getEntityById(entityId, req.workspaceId);
         if (!entity) {
           return res.status(404).json({ error: "Entity not found" });
         }
-        await ensureMonthlyReportsForClosedMonths(entityId);
+        await ensureMonthlyReportsForClosedMonths(entityId, req.workspaceId);
       }
       const entityScope = normalizeMonthlyReportEntityScope(entityId);
       const [countRow, rows] = await Promise.all([
-        get("SELECT COUNT(*) AS total FROM monthly_reports WHERE entity_id = ?", [
-          entityScope,
-        ]),
+        get(
+          `
+          SELECT COUNT(*) AS total
+          FROM monthly_reports
+          WHERE workspace_id = ? AND entity_id = ?
+          `,
+          [req.workspaceId, entityScope]
+        ),
         all(
           `
-          SELECT month_key, entity_id, generated_at, updated_at, report_json
+          SELECT workspace_id, month_key, entity_id, generated_at, updated_at, report_json
           FROM monthly_reports
-          WHERE entity_id = ?
+          WHERE workspace_id = ? AND entity_id = ?
           ORDER BY month_key DESC
           LIMIT ? OFFSET ?
           `,
-          [entityScope, pageSize, offset]
+          [req.workspaceId, entityScope, pageSize, offset]
         ),
       ]);
 
@@ -73,6 +79,7 @@ function registerReportRoutes(app, deps) {
             return null;
           }
           return {
+            workspace_id: row.workspace_id,
             month_key: row.month_key,
             entity_id: row.entity_id || null,
             generated_at: row.generated_at,
@@ -117,13 +124,22 @@ function registerReportRoutes(app, deps) {
 
     try {
       if (entityId) {
-        const entity = await getEntityById(entityId);
+        const entity = await getEntityById(entityId, req.workspaceId);
         if (!entity) {
           return res.status(404).json({ error: "Entity not found" });
         }
       }
-      const report = await buildMonthlyReportForMonth(monthKey, entityId);
-      const saved = await saveMonthlyReport(monthKey, report, entityId);
+      const report = await buildMonthlyReportForMonth(
+        monthKey,
+        entityId,
+        req.workspaceId
+      );
+      const saved = await saveMonthlyReport(
+        monthKey,
+        report,
+        entityId,
+        req.workspaceId
+      );
       if (!saved) {
         return res.status(500).json({ error: "Failed to save monthly report" });
       }
@@ -147,25 +163,36 @@ function registerReportRoutes(app, deps) {
 
     try {
       if (entityId) {
-        const entity = await getEntityById(entityId);
+        const entity = await getEntityById(entityId, req.workspaceId);
         if (!entity) {
           return res.status(404).json({ error: "Entity not found" });
         }
       }
-      let record = await getMonthlyReportRecord(monthKey, entityId);
+      let record = await getMonthlyReportRecord(monthKey, entityId, req.workspaceId);
       if (!record) {
-        const report = await buildMonthlyReportForMonth(monthKey, entityId);
-        record = await saveMonthlyReport(monthKey, report, entityId);
+        const report = await buildMonthlyReportForMonth(
+          monthKey,
+          entityId,
+          req.workspaceId
+        );
+        record = await saveMonthlyReport(
+          monthKey,
+          report,
+          entityId,
+          req.workspaceId
+        );
       }
       if (!record) {
         return res.status(404).json({ error: "Monthly report not found" });
       }
 
       const [debtList, recurringItems] = await Promise.all([
-        getMonthDebtTransactions(monthKey, entityId),
+        getMonthDebtTransactions(monthKey, entityId, req.workspaceId),
         all(
-          `${RECURRING_SELECT}${entityId ? " WHERE r.entity_id = ?" : ""}`,
-          entityId ? [entityId] : []
+          `${RECURRING_SELECT}
+           WHERE ent.workspace_id = ?
+           ${entityId ? "AND r.entity_id = ?" : ""}`,
+          entityId ? [req.workspaceId, entityId] : [req.workspaceId]
         ),
       ]);
       const computedRecurringSnapshot = buildRecurringReportSnapshot(
@@ -178,7 +205,12 @@ function registerReportRoutes(app, deps) {
           ...record.report,
           recurring: computedRecurringSnapshot,
         };
-        const saved = await saveMonthlyReport(monthKey, patchedReport, entityId);
+        const saved = await saveMonthlyReport(
+          monthKey,
+          patchedReport,
+          entityId,
+          req.workspaceId
+        );
         if (saved) {
           record = saved;
         } else {
@@ -308,7 +340,9 @@ function registerReportRoutes(app, deps) {
             e.expense_category_id,
             c.name AS expense_category_name
           FROM expenses e
+          INNER JOIN entities ent ON ent.id = e.entity_id
           LEFT JOIN categories c ON e.expense_category_id = c.id
+          WHERE ent.workspace_id = ?
           ORDER BY e.spent_at DESC, e.id DESC
         `,
       },
@@ -331,7 +365,9 @@ function registerReportRoutes(app, deps) {
             i.income_category_id,
             c.name AS income_category_name
           FROM income i
+          INNER JOIN entities ent ON ent.id = i.entity_id
           LEFT JOIN income_categories c ON i.income_category_id = c.id
+          WHERE ent.workspace_id = ?
           ORDER BY i.received_date DESC, i.id DESC
         `,
       },
@@ -362,7 +398,9 @@ function registerReportRoutes(app, deps) {
             d.debt_category_id,
             c.name AS debt_category_name
           FROM debts d
+          INNER JOIN entities ent ON ent.id = d.entity_id
           LEFT JOIN categories c ON d.debt_category_id = c.id
+          WHERE ent.workspace_id = ?
           ORDER BY d.spent_at DESC, d.id DESC
         `,
       },
@@ -384,7 +422,7 @@ function registerReportRoutes(app, deps) {
           "next_due_date",
           "last_confirmed_date",
         ],
-        query: `${RECURRING_SELECT} ORDER BY r.next_due_date ASC, r.id ASC`,
+        query: `${RECURRING_SELECT} WHERE ent.workspace_id = ? ORDER BY r.next_due_date ASC, r.id ASC`,
       },
     };
 
@@ -394,7 +432,7 @@ function registerReportRoutes(app, deps) {
     }
 
     try {
-      const rows = await all(config.query);
+      const rows = await all(config.query, [req.workspaceId]);
       const csv = buildCsv(config.columns, rows);
       res.setHeader("Content-Type", "text/csv; charset=utf-8");
       res.setHeader(

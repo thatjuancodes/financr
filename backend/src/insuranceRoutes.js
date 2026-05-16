@@ -58,7 +58,7 @@ function normalizeActiveFlag(value) {
 }
 
 function registerInsuranceRoutes(app, deps) {
-  const { all, get, run } = deps;
+  const { all, get, run, assertEntityInWorkspace } = deps;
 
   app.get("/life-insurances", async (req, res) => {
     const entityId = normalizeRequiredText(req.query?.entity_id);
@@ -84,11 +84,11 @@ function registerInsuranceRoutes(app, deps) {
               li.created_at,
               li.updated_at
             FROM life_insurances li
-            LEFT JOIN entities e ON e.id = li.entity_id
-            WHERE li.entity_id = ?
+            INNER JOIN entities e ON e.id = li.entity_id
+            WHERE e.workspace_id = ? AND li.entity_id = ?
             ORDER BY li.is_active DESC, li.renewal_date ASC, li.provider ASC, li.policy_name ASC
             `,
-            [entityId]
+            [req.workspaceId, entityId]
           )
         : await all(
             `
@@ -110,9 +110,12 @@ function registerInsuranceRoutes(app, deps) {
               li.created_at,
               li.updated_at
             FROM life_insurances li
-            LEFT JOIN entities e ON e.id = li.entity_id
+            INNER JOIN entities e ON e.id = li.entity_id
+            WHERE e.workspace_id = ?
             ORDER BY e.name ASC, li.is_active DESC, li.renewal_date ASC, li.provider ASC, li.policy_name ASC
             `
+            ,
+            [req.workspaceId]
           );
       res.json(rows);
     } catch (err) {
@@ -157,7 +160,10 @@ function registerInsuranceRoutes(app, deps) {
     }
 
     try {
-      const entity = await get("SELECT id FROM entities WHERE id = ? LIMIT 1", [entityId]);
+      const entity = await get(
+        "SELECT id FROM entities WHERE id = ? AND workspace_id = ? LIMIT 1",
+        [entityId, req.workspaceId]
+      );
       if (!entity) {
         return res.status(400).json({ error: "Entity not found" });
       }
@@ -270,14 +276,23 @@ function registerInsuranceRoutes(app, deps) {
 
     try {
       const existing = await get(
-        "SELECT id FROM life_insurances WHERE id = ? LIMIT 1",
-        [id]
+        `
+        SELECT li.id
+        FROM life_insurances li
+        INNER JOIN entities e ON e.id = li.entity_id
+        WHERE li.id = ? AND e.workspace_id = ?
+        LIMIT 1
+        `,
+        [id, req.workspaceId]
       );
       if (!existing) {
         return res.status(404).json({ error: "Life insurance not found" });
       }
 
-      const entity = await get("SELECT id FROM entities WHERE id = ? LIMIT 1", [entityId]);
+      const entity = await get(
+        "SELECT id FROM entities WHERE id = ? AND workspace_id = ? LIMIT 1",
+        [entityId, req.workspaceId]
+      );
       if (!entity) {
         return res.status(400).json({ error: "Entity not found" });
       }

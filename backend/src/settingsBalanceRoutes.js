@@ -16,9 +16,21 @@ function registerSettingsBalanceRoutes(app, deps) {
     todayISO,
     addDays,
     getUpcomingRecurringExpenseTotal,
+    assertEntityInWorkspace,
+    assertAccountInWorkspace,
   } = deps;
 
-  async function getOutstandingDebtTotal(entityId = null) {
+  async function getOutstandingDebtTotal(entityId = null, workspaceId = null) {
+    const params = [];
+    const whereClauses = [];
+    if (workspaceId) {
+      whereClauses.push("ent.workspace_id = ?");
+      params.push(workspaceId);
+    }
+    if (entityId) {
+      whereClauses.push("d.entity_id = ?");
+      params.push(entityId);
+    }
     const row = await get(
       `
       SELECT COALESCE(SUM(CASE WHEN grouped.total > 0 THEN grouped.total ELSE 0 END), 0) AS total
@@ -26,8 +38,9 @@ function registerSettingsBalanceRoutes(app, deps) {
         SELECT
           SUM(d.amount) AS total
         FROM debts d
+        INNER JOIN entities ent ON ent.id = d.entity_id
         LEFT JOIN loan_origin_configs cfg ON cfg.loan_origin = d.loan_origin
-        ${entityId ? "WHERE d.entity_id = ?" : ""}
+        ${whereClauses.length ? `WHERE ${whereClauses.join(" AND ")}` : ""}
         GROUP BY
           d.entity_id,
           COALESCE(NULLIF(TRIM(d.loan_origin), ''), '__unassigned__'),
@@ -42,7 +55,7 @@ function registerSettingsBalanceRoutes(app, deps) {
           )
       ) grouped
       `,
-      entityId ? [entityId] : []
+      params
     );
 
     return Number(row?.total ?? 0);
@@ -52,7 +65,7 @@ function registerSettingsBalanceRoutes(app, deps) {
     res.json({ ok: true });
   });
 
-  app.get("/settings", async (_req, res) => {
+  app.get("/settings", async (req, res) => {
     try {
       const [settings, entityDefaultAccounts] = await Promise.all([
         get(
@@ -68,6 +81,13 @@ function registerSettingsBalanceRoutes(app, deps) {
         ),
         listEntityAccountPreferences(all),
       ]);
+      const workspaceEntityRows = await all(
+        "SELECT id FROM entities WHERE workspace_id = ?",
+        [req.workspaceId]
+      );
+      const workspaceEntityIds = new Set(
+        workspaceEntityRows.map((row) => String(row.id))
+      );
       res.json({
         base_balance: settings?.base_balance ?? 0,
         currency_code: settings?.currency_code ?? "USD",
@@ -75,7 +95,9 @@ function registerSettingsBalanceRoutes(app, deps) {
           normalizeOptionalAccountId(settings?.default_expense_account_id),
         default_income_account_id:
           normalizeOptionalAccountId(settings?.default_income_account_id),
-        entity_default_accounts: entityDefaultAccounts,
+        entity_default_accounts: (entityDefaultAccounts || []).filter((item) =>
+          workspaceEntityIds.has(String(item.entity_id || ""))
+        ),
       });
     } catch (err) {
       res.status(500).json({ error: "Failed to load settings" });
@@ -157,15 +179,22 @@ function registerSettingsBalanceRoutes(app, deps) {
         return res.status(400).json({ error: "Invalid entity id" });
       }
       if (entityId) {
-        const entity = await getEntityById(entityId);
+        const entity = await getEntityById(entityId, req.workspaceId);
         if (!entity) {
           return res.status(404).json({ error: "Entity not found" });
         }
       }
       if (hasExpenseDefault) {
-        const account = await get("SELECT id, entity_id FROM accounts WHERE id = ? LIMIT 1", [
-          parsedExpenseDefault,
-        ]);
+        const account = await get(
+          `
+          SELECT a.id, a.entity_id
+          FROM accounts a
+          INNER JOIN entities e ON e.id = a.entity_id
+          WHERE a.id = ? AND e.workspace_id = ?
+          LIMIT 1
+          `,
+          [parsedExpenseDefault, req.workspaceId]
+        );
         if (!account) {
           return res
             .status(404)
@@ -178,9 +207,16 @@ function registerSettingsBalanceRoutes(app, deps) {
         }
       }
       if (hasIncomeDefault) {
-        const account = await get("SELECT id, entity_id FROM accounts WHERE id = ? LIMIT 1", [
-          parsedIncomeDefault,
-        ]);
+        const account = await get(
+          `
+          SELECT a.id, a.entity_id
+          FROM accounts a
+          INNER JOIN entities e ON e.id = a.entity_id
+          WHERE a.id = ? AND e.workspace_id = ?
+          LIMIT 1
+          `,
+          [parsedIncomeDefault, req.workspaceId]
+        );
         if (!account) {
           return res
             .status(404)
@@ -257,6 +293,13 @@ function registerSettingsBalanceRoutes(app, deps) {
         ),
         listEntityAccountPreferences(all),
       ]);
+      const workspaceEntityRows = await all(
+        "SELECT id FROM entities WHERE workspace_id = ?",
+        [req.workspaceId]
+      );
+      const workspaceEntityIds = new Set(
+        workspaceEntityRows.map((row) => String(row.id))
+      );
 
       res.json({
         base_balance: settings?.base_balance ?? 0,
@@ -265,7 +308,9 @@ function registerSettingsBalanceRoutes(app, deps) {
           normalizeOptionalAccountId(settings?.default_expense_account_id),
         default_income_account_id:
           normalizeOptionalAccountId(settings?.default_income_account_id),
-        entity_default_accounts: entityDefaultAccounts,
+        entity_default_accounts: (entityDefaultAccounts || []).filter((item) =>
+          workspaceEntityIds.has(String(item.entity_id || ""))
+        ),
       });
     } catch (err) {
       res.status(500).json({ error: "Failed to update default accounts" });
@@ -280,7 +325,7 @@ function registerSettingsBalanceRoutes(app, deps) {
     }
     try {
       if (entityId) {
-        const entity = await getEntityById(entityId);
+        const entity = await getEntityById(entityId, req.workspaceId);
         if (!entity) {
           return res.status(404).json({ error: "Entity not found" });
         }
@@ -288,25 +333,42 @@ function registerSettingsBalanceRoutes(app, deps) {
       const settings = await get(
         "SELECT base_balance, currency_code FROM settings WHERE id = 1"
       );
-      const accountsTotal = await getAccountsTotalBalance(entityId || null);
+      const accountsTotal = await getAccountsTotalBalance(
+        entityId || null,
+        req.workspaceId
+      );
       const incomeTotal = await get(
-        `SELECT COALESCE(SUM(amount), 0) AS total FROM income WHERE COALESCE(is_transfer_bookkeeping, 0) = 0${
-          entityId ? " AND entity_id = ?" : ""
-        }`,
-        entityId ? [entityId] : []
+        `
+        SELECT COALESCE(SUM(i.amount), 0) AS total
+        FROM income i
+        INNER JOIN entities e ON e.id = i.entity_id
+        WHERE e.workspace_id = ?
+          AND COALESCE(i.is_transfer_bookkeeping, 0) = 0
+          ${entityId ? "AND i.entity_id = ?" : ""}
+        `,
+        entityId ? [req.workspaceId, entityId] : [req.workspaceId]
       );
       const expenseTotal = await get(
-        `SELECT COALESCE(SUM(amount), 0) AS total FROM expenses WHERE COALESCE(is_transfer_bookkeeping, 0) = 0${
-          entityId ? " AND entity_id = ?" : ""
-        }`,
-        entityId ? [entityId] : []
+        `
+        SELECT COALESCE(SUM(e.amount), 0) AS total
+        FROM expenses e
+        INNER JOIN entities ent ON ent.id = e.entity_id
+        WHERE ent.workspace_id = ?
+          AND COALESCE(e.is_transfer_bookkeeping, 0) = 0
+          ${entityId ? "AND e.entity_id = ?" : ""}
+        `,
+        entityId ? [req.workspaceId, entityId] : [req.workspaceId]
       );
-      const debtTotal = { total: await getOutstandingDebtTotal(entityId || null) };
+      const debtTotal = {
+        total: await getOutstandingDebtTotal(entityId || null, req.workspaceId),
+      };
       const recurringItems = await all(
-        `${RECURRING_SELECT} WHERE r.type = 'expense'${
-          entityId ? " AND r.entity_id = ?" : ""
-        } ORDER BY r.next_due_date ASC, r.id ASC`,
-        entityId ? [entityId] : []
+        `${RECURRING_SELECT}
+         WHERE r.type = 'expense'
+           AND ent.workspace_id = ?
+           ${entityId ? "AND r.entity_id = ?" : ""}
+         ORDER BY r.next_due_date ASC, r.id ASC`,
+        entityId ? [req.workspaceId, entityId] : [req.workspaceId]
       );
       const today = todayISO();
       const projectionEndDate = addDays(today, 29);
