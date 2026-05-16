@@ -69,7 +69,12 @@ export default function Navbar() {
             <div className="w-8 h-8 rounded-md bg-accent flex items-center justify-center">
               <i className="ri-bank-card-line text-white text-base" />
             </div>
-            <span className="block font-semibold text-lg tracking-tight text-text">Steward</span>
+            <div className="flex items-center gap-2">
+              <span className="block font-semibold text-lg tracking-tight text-text">Steward</span>
+              <span className="inline-flex items-center rounded-full bg-warning-light px-2 py-0.5 text-[10px] font-semibold uppercase tracking-[0.16em] text-warning-dark">
+                Beta
+              </span>
+            </div>
           </Link>
         </div>
 
