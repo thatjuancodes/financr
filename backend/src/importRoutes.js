@@ -372,7 +372,11 @@ async function buildBatchPayload(db, batchId, workspaceId) {
     return null;
   }
   return {
-    batch,
+    batch: {
+      ...batch,
+      display_title: files[0]?.filename || batch.source_label || null,
+      primary_filename: files[0]?.filename || null,
+    },
     files,
     summary,
     candidates,
@@ -565,7 +569,7 @@ function registerImportRoutes(app, deps) {
           req.workspaceId,
           req.currentUser.id,
           sourceType,
-          sourceLabel,
+          sourceLabel || uploadedFile.originalname,
           createdAt,
           createdAt,
         ]
@@ -700,6 +704,8 @@ function registerImportRoutes(app, deps) {
           b.created_by_user_id,
           b.source_type,
           b.source_label,
+          MIN(f.filename) AS primary_filename,
+          COALESCE(MIN(f.filename), b.source_label) AS display_title,
           b.status,
           b.parser_id,
           b.error_message,

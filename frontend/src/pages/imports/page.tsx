@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import { api } from "@/api";
 import Card from "@/components/base/Card";
@@ -35,6 +35,19 @@ function sourceTypeLabel(sourceType: ImportBatchRecord["source_type"]) {
   return sourceType === "pdf" ? "PDF" : "Image";
 }
 
+function batchTitle(batch: ImportBatchRecord) {
+  return batch.display_title || batch.primary_filename || batch.source_label || `Batch ${String(batch.id).slice(0, 8)}`;
+}
+
+function batchHasPendingReview(batch: ImportBatchRecord) {
+  return (
+    summaryValue(batch.summary, "pending_count") +
+      summaryValue(batch.summary, "needs_review_count") +
+      summaryValue(batch.summary, "duplicate_count") >
+    0
+  );
+}
+
 export default function ImportsPage() {
   const navigate = useNavigate();
   const { accounts, balance, entities, loading: financeLoading, selectedEntityId } = useFinanceData();
@@ -51,7 +64,7 @@ export default function ImportsPage() {
     selectedEntityId && selectedEntityId !== ALL_ENTITIES_ID ? selectedEntityId : ""
   );
   const [selectedAccountId, setSelectedAccountId] = useState("");
-  const [dragActive, setDragActive] = useState(false);
+  const fileInputRef = useRef<HTMLInputElement | null>(null);
 
   const filteredAccounts = useMemo(() => {
     if (!selectedEntity) {
@@ -156,59 +169,27 @@ export default function ImportsPage() {
             </p>
             <h1 className="text-2xl font-semibold text-text">Transaction Inbox</h1>
           </div>
-          <Link
-            to="/transactions"
-            className="inline-flex items-center gap-2 rounded-lg border border-slate-200 bg-white px-4 py-2 text-sm font-medium text-text transition hover:border-accent/30 hover:text-accent-dark"
-          >
-            <i className="ri-arrow-left-line text-base" />
-            Back to Transactions
-          </Link>
-        </div>
-
-        <div className="mb-6 grid gap-3 md:grid-cols-2 xl:grid-cols-5">
-          <InboxStatCard
-            label="Waiting for review"
-            value={String(summaryValue(summary, "pending_count") + summaryValue(summary, "needs_review_count"))}
-            hint="Pending and needs review"
-          />
-          <InboxStatCard
-            label="Possible duplicates"
-            value={String(summaryValue(summary, "duplicate_count"))}
-            hint="Review before approval"
-          />
-          <InboxStatCard
-            label="Approved"
-            value={String(summaryValue(summary, "approved_count"))}
-            hint="Moved into finance tables"
-          />
-          <InboxStatCard
-            label="Rejected"
-            value={String(summaryValue(summary, "rejected_count"))}
-            hint="Ignored candidates"
-          />
-          <InboxStatCard
-            label="Currency"
-            value={balance?.currency_code || "PHP"}
-            hint="Workspace currency"
-          />
-        </div>
-
-        <Card className="mb-6 p-5">
-          <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
-            <div>
-              <h2 className="text-lg font-semibold text-text">Upload statements or screenshots</h2>
-              <p className="text-sm text-text-secondary">
-                Files stay in the active Space and create review-only candidates until you approve them.
-              </p>
-            </div>
+          <div className="flex flex-wrap items-center gap-2">
             <Badge variant="outline" size="md">
-              PDF and image only
+              {`${summaryValue(summary, "pending_count") + summaryValue(summary, "needs_review_count")} waiting`}
             </Badge>
+            <Badge variant="outline" size="md">
+              {`${summaryValue(summary, "duplicate_count")} duplicates`}
+            </Badge>
+            <Link
+              to="/transactions"
+              className="inline-flex items-center gap-2 rounded-lg border border-slate-200 bg-white px-4 py-2 text-sm font-medium text-text transition hover:border-accent/30 hover:text-accent-dark"
+            >
+              <i className="ri-arrow-left-line text-base" />
+              Back to Transactions
+            </Link>
           </div>
+        </div>
 
-          <div className="mb-4 grid gap-3 md:grid-cols-3">
-            <label className="space-y-2 text-sm text-text-secondary">
-              <span className="block font-medium text-text">Source label</span>
+        <Card className="mb-4 p-4">
+          <div className="grid gap-3 xl:grid-cols-[1.15fr,0.85fr,1fr,auto] xl:items-end">
+            <label className="space-y-1 text-sm text-text-secondary">
+              <span className="block text-xs font-semibold uppercase tracking-[0.18em] text-text-muted">Source label</span>
               <input
                 value={sourceLabel}
                 onChange={(event) => setSourceLabel(event.target.value)}
@@ -216,8 +197,8 @@ export default function ImportsPage() {
                 className="w-full rounded-lg border border-slate-200 bg-white px-3 py-2.5 text-sm text-text outline-none transition focus:border-accent"
               />
             </label>
-            <label className="space-y-2 text-sm text-text-secondary">
-              <span className="block font-medium text-text">Target entity</span>
+            <label className="space-y-1 text-sm text-text-secondary">
+              <span className="block text-xs font-semibold uppercase tracking-[0.18em] text-text-muted">Entity</span>
               <select
                 value={selectedEntity}
                 onChange={(event) => setSelectedEntity(event.target.value)}
@@ -231,8 +212,8 @@ export default function ImportsPage() {
                 ))}
               </select>
             </label>
-            <label className="space-y-2 text-sm text-text-secondary">
-              <span className="block font-medium text-text">Target account</span>
+            <label className="space-y-1 text-sm text-text-secondary">
+              <span className="block text-xs font-semibold uppercase tracking-[0.18em] text-text-muted">Account</span>
               <select
                 value={selectedAccountId}
                 onChange={(event) => setSelectedAccountId(event.target.value)}
@@ -246,60 +227,50 @@ export default function ImportsPage() {
                 ))}
               </select>
             </label>
-          </div>
-
-          <label
-            onDragEnter={() => setDragActive(true)}
-            onDragOver={(event) => {
-              event.preventDefault();
-              setDragActive(true);
-            }}
-            onDragLeave={() => setDragActive(false)}
-            onDrop={(event) => {
-              event.preventDefault();
-              setDragActive(false);
-              void handleFiles(event.dataTransfer.files);
-            }}
-            className={`flex cursor-pointer flex-col items-center justify-center rounded-2xl border border-dashed px-6 py-10 text-center transition ${
-              dragActive
-                ? "border-accent bg-accent-light/50"
-                : "border-slate-300 bg-bg-subtle hover:border-accent/50 hover:bg-accent-light/30"
-            }`}
-          >
-            <input
-              type="file"
-              accept="application/pdf,image/*"
-              multiple
-              disabled={uploadState === "uploading"}
-              onChange={(event) => {
-                void handleFiles(event.target.files);
-                event.currentTarget.value = "";
-              }}
-              className="hidden"
-            />
-            <div className="mb-3 inline-flex h-12 w-12 items-center justify-center rounded-full bg-white text-accent shadow-sm">
-              <i className="ri-file-upload-line text-xl" />
+            <div className="flex flex-wrap items-center gap-2 xl:justify-end">
+              <input
+                ref={fileInputRef}
+                type="file"
+                accept="application/pdf,image/*"
+                multiple
+                disabled={uploadState === "uploading"}
+                onChange={(event) => {
+                  void handleFiles(event.target.files);
+                  event.currentTarget.value = "";
+                }}
+                className="hidden"
+              />
+              <Badge variant="outline" size="md">
+                {balance?.currency_code || "PHP"}
+              </Badge>
+              <button
+                type="button"
+                disabled={uploadState === "uploading"}
+                onClick={() => fileInputRef.current?.click()}
+                className="inline-flex items-center gap-2 rounded-lg bg-accent px-4 py-2.5 text-sm font-medium text-white transition hover:bg-accent-dark disabled:cursor-not-allowed disabled:opacity-60"
+              >
+                <i className="ri-file-upload-line text-base" />
+                {uploadState === "uploading" ? "Processing..." : "Upload files"}
+              </button>
             </div>
-            <p className="text-base font-semibold text-text">
-              {uploadState === "uploading" ? "Processing files..." : "Drop files here or click to browse"}
-            </p>
-            <p className="mt-1 text-sm text-text-secondary">
-              Drag multiple bank statements or screenshots to create batches quickly.
-            </p>
-          </label>
-
-          {uploadError ? <p className="mt-3 text-sm text-negative-dark">{uploadError}</p> : null}
-          {uploadNotice ? <p className="mt-3 text-sm text-positive-dark">{uploadNotice}</p> : null}
+          </div>
+          <div className="mt-2 flex flex-wrap items-center gap-3 text-xs text-text-secondary">
+            <span>PDF and image only</span>
+            <span>One uploaded file becomes one review batch</span>
+            <span>Review and approval happen on the batch page</span>
+          </div>
+          {uploadError ? <p className="mt-2 text-sm text-negative-dark">{uploadError}</p> : null}
+          {uploadNotice ? <p className="mt-2 text-sm text-positive-dark">{uploadNotice}</p> : null}
         </Card>
 
         {error ? <p className="mb-4 text-sm text-negative-dark">{error}</p> : null}
 
-        <Card className="p-5">
-          <div className="mb-4 flex items-center justify-between gap-3">
+        <Card className="p-4">
+          <div className="mb-3 flex items-center justify-between gap-3">
             <div>
               <h2 className="text-lg font-semibold text-text">Recent batches</h2>
               <p className="text-sm text-text-secondary">
-                Review new candidates and approve them into the unified transactions feed.
+                Open a batch to review imported transactions for approval.
               </p>
             </div>
           </div>
@@ -310,61 +281,51 @@ export default function ImportsPage() {
               body="Upload a statement or screenshot to create your first Transaction Inbox batch."
             />
           ) : (
-            <div className="space-y-3">
+            <div className="space-y-2">
               {batches.map((batch) => (
                 <div
                   key={batch.id}
-                  className="rounded-xl border border-slate-200 bg-white p-4"
+                  className="rounded-xl border border-slate-200 bg-white p-3"
                 >
-                  <div className="mb-3 flex flex-wrap items-center justify-between gap-3">
-                    <div>
-                      <div className="flex flex-wrap items-center gap-2">
-                        <h3 className="text-sm font-semibold text-text">
-                          {batch.source_label || `Batch ${String(batch.id).slice(0, 8)}`}
-                        </h3>
-                        <Badge variant={batchStatusVariant(batch.status)}>{batch.status}</Badge>
-                        <Badge variant="outline">{sourceTypeLabel(batch.source_type)}</Badge>
-                      </div>
-                      <p className="mt-1 text-sm text-text-secondary">
-                        Uploaded {formatLongDate(batch.created_at)} · {batch.file_count || 0} file
-                        {batch.file_count === 1 ? "" : "s"}
-                      </p>
-                    </div>
-                    <div className="text-right text-sm text-text-secondary">
-                      <p>{summaryValue(batch.summary, "pending_count") + summaryValue(batch.summary, "needs_review_count")} waiting</p>
-                      <p>{summaryValue(batch.summary, "duplicate_count")} possible duplicates</p>
-                    </div>
-                  </div>
-
-                  <div className="mb-3 flex flex-wrap gap-2">
-                    <Link
-                      to={`/imports/${encodeURIComponent(batch.id)}`}
-                      className="inline-flex items-center gap-2 rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm font-medium text-text transition hover:border-accent/30 hover:text-accent-dark"
+                  <div className="flex items-center gap-3">
+                    <button
+                      type="button"
+                      onClick={() => navigate(`/imports/${encodeURIComponent(batch.id)}`)}
+                      className="flex min-w-0 flex-1 items-center gap-3 text-left"
                     >
-                      <i className="ri-eye-line text-base" />
-                      Open batch
-                    </Link>
+                      <div className="min-w-0 flex-1">
+                        <div className="flex flex-wrap items-center gap-2">
+                          <h3 className="text-sm font-semibold text-text">
+                            {batchTitle(batch)}
+                          </h3>
+                          <Badge variant={batchStatusVariant(batch.status)}>{batch.status}</Badge>
+                          <Badge variant="outline">{sourceTypeLabel(batch.source_type)}</Badge>
+                          {batchHasPendingReview(batch) ? (
+                            <Badge variant="warning">pending review</Badge>
+                          ) : null}
+                        </div>
+                        <div className="mt-1 flex flex-wrap items-center gap-x-4 gap-y-1 text-sm text-text-secondary">
+                          <span>{formatLongDate(batch.created_at)}</span>
+                          <span>{summaryValue(batch.summary, "total_count")} candidates</span>
+                          <span>{summaryValue(batch.summary, "pending_count") + summaryValue(batch.summary, "needs_review_count")} waiting</span>
+                          <span>{summaryValue(batch.summary, "duplicate_count")} duplicates</span>
+                        </div>
+                      </div>
+                      <i className="ri-arrow-right-s-line text-xl text-text-muted" />
+                    </button>
                     <button
                       type="button"
                       disabled={deletingBatchId === batch.id}
                       onClick={() => void handleDeleteBatch(batch.id)}
-                      className="inline-flex items-center gap-2 rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm font-medium text-text transition hover:border-negative/30 hover:text-negative-dark disabled:cursor-not-allowed disabled:opacity-60"
+                      className="inline-flex shrink-0 items-center gap-2 rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm font-medium text-text transition hover:border-negative/30 hover:text-negative-dark disabled:cursor-not-allowed disabled:opacity-60"
                     >
                       <i className="ri-delete-bin-line text-base" />
-                      Delete batch
+                      Delete
                     </button>
                   </div>
 
-                  <div className="grid gap-2 text-xs text-text-secondary md:grid-cols-5">
-                    <BatchMiniStat label="Total" value={String(summaryValue(batch.summary, "total_count"))} />
-                    <BatchMiniStat label="Pending" value={String(summaryValue(batch.summary, "pending_count"))} />
-                    <BatchMiniStat label="Review" value={String(summaryValue(batch.summary, "needs_review_count"))} />
-                    <BatchMiniStat label="Duplicate" value={String(summaryValue(batch.summary, "duplicate_count"))} />
-                    <BatchMiniStat label="Approved" value={String(summaryValue(batch.summary, "approved_count"))} />
-                  </div>
-
                   {batch.error_message ? (
-                    <p className="mt-3 text-sm text-negative-dark">{batch.error_message}</p>
+                    <p className="mt-2 text-sm text-negative-dark">{batch.error_message}</p>
                   ) : null}
                 </div>
               ))}
@@ -372,25 +333,6 @@ export default function ImportsPage() {
           )}
         </Card>
       </main>
-    </div>
-  );
-}
-
-function InboxStatCard({ label, value, hint }: { label: string; value: string; hint: string }) {
-  return (
-    <Card className="p-4">
-      <p className="text-xs font-semibold uppercase tracking-[0.2em] text-text-muted">{label}</p>
-      <p className="mt-2 text-2xl font-semibold text-text">{value}</p>
-      <p className="mt-1 text-sm text-text-secondary">{hint}</p>
-    </Card>
-  );
-}
-
-function BatchMiniStat({ label, value }: { label: string; value: string }) {
-  return (
-    <div className="rounded-lg bg-bg-subtle px-3 py-2">
-      <p className="font-semibold text-text">{value}</p>
-      <p>{label}</p>
     </div>
   );
 }

@@ -8,7 +8,7 @@ import { EmptyState, LoadingState } from "@/components/feature/PageState";
 import { useFinanceData } from "@/contexts/FinanceDataContext";
 import { ALL_ENTITIES_ID, formatCurrency, formatLongDate, formatShortDate, monthKey, sortByDateDesc } from "@/lib/finance";
 import DebtStatementsView from "@/pages/transactions/components/DebtStatementsView";
-import type { CategoryRecord } from "@/types/finance";
+import type { CategoryRecord, ImportBatchRecord } from "@/types/finance";
 import { buildDebtCycleMonthsFromData, getDebtStatementMonth } from "@/utils/appState";
 import {
   defaultAccountSelection,
@@ -136,6 +136,15 @@ type AccountOptionRecord = {
   currency_code: string;
 };
 
+function importBatchHasPendingReview(batch: ImportBatchRecord) {
+  return (
+    Number(batch.summary?.pending_count || 0) +
+      Number(batch.summary?.needs_review_count || 0) +
+      Number(batch.summary?.duplicate_count || 0) >
+    0
+  );
+}
+
 export default function Transactions() {
   const navigate = useNavigate();
   const {
@@ -195,6 +204,7 @@ export default function Transactions() {
   const [genericEditError, setGenericEditError] = useState("");
   const [isGenericEditSubmitting, setIsGenericEditSubmitting] = useState(false);
   const [transferAccounts, setTransferAccounts] = useState<AccountOptionRecord[]>(accounts);
+  const [pendingImportBatchCount, setPendingImportBatchCount] = useState(0);
   const categoryMenuRef = useRef<HTMLDivElement | null>(null);
   const accountMenuRef = useRef<HTMLDivElement | null>(null);
   const monthMenuRef = useRef<HTMLDivElement | null>(null);
@@ -219,6 +229,30 @@ export default function Transactions() {
   const [transferEditDraft, setTransferEditDraft] = useState<TransferDraft>(() =>
     createEmptyTransferDraft(accounts)
   );
+
+  useEffect(() => {
+    let isCancelled = false;
+
+    async function loadImportBatchCount() {
+      try {
+        const response = await api.getImports();
+        if (isCancelled) {
+          return;
+        }
+        const batches = Array.isArray(response?.batches) ? response.batches : [];
+        setPendingImportBatchCount(batches.filter(importBatchHasPendingReview).length);
+      } catch (_error) {
+        if (!isCancelled) {
+          setPendingImportBatchCount(0);
+        }
+      }
+    }
+
+    void loadImportBatchCount();
+    return () => {
+      isCancelled = true;
+    };
+  }, []);
 
   const currency = balance?.currency_code || "PHP";
   const defaultEntityId =
@@ -1451,6 +1485,9 @@ export default function Transactions() {
             >
               <i className="ri-inbox-archive-line text-base" />
               <span>Bulk Update</span>
+              {pendingImportBatchCount > 0 ? (
+                <Badge variant="warning">{String(pendingImportBatchCount)}</Badge>
+              ) : null}
             </button>
             <button
               type="button"

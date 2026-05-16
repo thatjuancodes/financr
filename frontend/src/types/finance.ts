@@ -267,6 +267,8 @@ export interface ImportBatchRecord {
   created_by_user_id: string;
   source_type: "pdf" | "image";
   source_label?: string | null;
+  primary_filename?: string | null;
+  display_title?: string | null;
   status: "uploaded" | "extracting" | "parsed" | "failed" | "reviewed";
   parser_id?: string | null;
   error_message?: string | null;
