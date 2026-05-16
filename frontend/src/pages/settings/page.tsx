@@ -8,7 +8,6 @@ import { EmptyState, LoadingState } from "@/components/feature/PageState";
 import { useFinanceData } from "@/contexts/FinanceDataContext";
 import { formatCurrency } from "@/lib/finance";
 import { AutomationContent } from "@/pages/automation/page";
-import DebtSettingsSection from "@/pages/settings/components/DebtSettingsSection";
 import ImportSettingsSection from "@/pages/settings/components/ImportSettingsSection";
 import { normalizeDefaultAccountPreferencesForEntity } from "@/utils/accounts";
 import { CATEGORY_COLOR_SWATCHES, buildCategoryBadgeStyle, resolveCategoryColor } from "@/utils/categoryColors";
@@ -18,7 +17,6 @@ type SettingsTab =
   | "accounts"
   | "categories"
   | "budgets"
-  | "debts"
   | "import"
   | "automation"
   | "app";
@@ -46,7 +44,6 @@ const SETTINGS_TABS: SettingsTab[] = [
   "accounts",
   "categories",
   "budgets",
-  "debts",
   "import",
   "automation",
   "app",
@@ -104,7 +101,6 @@ export default function Settings() {
     createCategory,
     createEntity,
     createIncomeCategory,
-    deleteLoanOriginConfig,
     deleteAccount,
     deleteBudget,
     deleteCategory,
@@ -112,10 +108,8 @@ export default function Settings() {
     deleteIncomeCategory,
     entities,
     incomeCategories,
-    loanOriginConfigs,
     loading,
     refresh,
-    saveLoanOriginConfig,
     setDefaultAccounts,
     setCurrency,
     settings,
@@ -888,14 +882,6 @@ export default function Settings() {
               ))
             )}
           </div>
-        ) : null}
-
-        {tab === "debts" ? (
-          <DebtSettingsSection
-            loanOriginConfigs={loanOriginConfigs}
-            onDeleteConfig={deleteLoanOriginConfig}
-            onSaveConfig={saveLoanOriginConfig}
-          />
         ) : null}
 
         {tab === "import" ? (

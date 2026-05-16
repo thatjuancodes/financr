@@ -66,8 +66,6 @@ type FinanceContextValue = {
   payoffDebtByOrigin: (payload: Record<string, unknown>) => Promise<void>;
   updateTransaction: (id: string | number, payload: Record<string, unknown>) => Promise<void>;
   deleteTransaction: (id: string | number) => Promise<void>;
-  saveLoanOriginConfig: (payload: Record<string, unknown>) => Promise<void>;
-  deleteLoanOriginConfig: (loanOrigin: string) => Promise<void>;
   createCategory: (payload: { name: string; color?: string | null; icon?: string | null }) => Promise<void>;
   updateCategory: (id: number, payload: { name?: string; color?: string | null; icon?: string | null }) => Promise<void>;
   deleteCategory: (id: number) => Promise<void>;
@@ -254,10 +252,6 @@ export function FinanceDataProvider({ children }: { children: React.ReactNode })
       runMutation(() => api.updateTransaction(id, payload), "Transaction updated"),
     deleteTransaction: (id) =>
       runMutation(() => api.deleteTransaction(id), "Transaction deleted"),
-    saveLoanOriginConfig: (payload) =>
-      runMutation(() => api.saveLoanOriginConfig(payload), "Debt statement settings saved"),
-    deleteLoanOriginConfig: (loanOrigin) =>
-      runMutation(() => api.deleteLoanOriginConfig(loanOrigin), "Debt statement settings deleted"),
     createCategory: (payload) => runMutation(() => api.addCategory(payload), "Expense category created"),
     updateCategory: (id, payload) =>
       runMutation(() => api.updateCategory(id, payload), "Expense category updated"),
