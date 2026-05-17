@@ -2,6 +2,13 @@ import { Navigate, Outlet, useLocation, useSearchParams } from "react-router-dom
 import { LoadingState } from "@/components/feature/PageState";
 import { useAuth } from "@/contexts/AuthContext";
 import { useWorkspace } from "@/contexts/WorkspaceContext";
+import NotFound from "@/pages/NotFound";
+
+const STYLEGUIDE_ALLOWED_EMAIL = "jmagaudielalvarez@gmail.com";
+
+function normalizeEmail(value: string | null | undefined) {
+  return String(value || "").trim().toLowerCase();
+}
 
 function FullScreenLoading({ label }: { label: string }) {
   return (
@@ -71,6 +78,16 @@ export function RequireOnboarding() {
 
   if (activeWorkspaceId) {
     return <Navigate to="/" replace />;
+  }
+
+  return <Outlet />;
+}
+
+export function RequireStyleguideAccess() {
+  const { currentUser } = useAuth();
+
+  if (normalizeEmail(currentUser?.email) !== STYLEGUIDE_ALLOWED_EMAIL) {
+    return <NotFound />;
   }
 
   return <Outlet />;

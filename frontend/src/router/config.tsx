@@ -17,7 +17,7 @@ import SignupPage from "../pages/signup/page";
 import OnboardingPage from "../pages/onboarding/page";
 import InvitePage from "../pages/invite/page";
 import HouseholdPage from "../pages/household/page";
-import { RequireAuth, RequireGuest, RequireOnboarding } from "./guards";
+import { RequireAuth, RequireGuest, RequireOnboarding, RequireStyleguideAccess } from "./guards";
 
 const routes: RouteObject[] = [
   {
@@ -102,8 +102,17 @@ const routes: RouteObject[] = [
         element: <HouseholdPage />,
       },
       {
-        path: "/design",
-        element: <DesignSystem />,
+        element: <RequireStyleguideAccess />,
+        children: [
+          {
+            path: "/styleguide",
+            element: <DesignSystem />,
+          },
+          {
+            path: "/design",
+            element: <Navigate to="/styleguide" replace />,
+          },
+        ],
       },
     ],
   },
